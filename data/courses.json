@@ -1,0 +1,150 @@
+{
+  "annee": 2027,
+  "coureurs": {
+    "aurele": {
+      "nom": "Aurèle",
+      "initiale": "A",
+      "couleur": "#e4572e"
+    },
+    "candice": {
+      "nom": "Candice",
+      "initiale": "C",
+      "couleur": "#2e86ab"
+    }
+  },
+  "courses": [
+    {
+      "id": "blacklake-2027",
+      "nom": "Blacklake Montenegro",
+      "coureurs": [
+        "aurele"
+      ],
+      "statut": "envisagé",
+      "date": "2027-06-12",
+      "heure_depart": "07:00",
+      "lieu": "Žabljak, parc national du Durmitor",
+      "pays": "Monténégro",
+      "distance_km": 35,
+      "denivele_pos": 1250,
+      "gpx": "gpx/blacklake-2027.gpx",
+      "exemple": "Fiche exemple : Aurèle n'est pas inscrit. La trace GPX, les infos et la logistique sont fictives.",
+      "liens": [
+        {
+          "titre": "Site officiel",
+          "url": "https://example.com"
+        },
+        {
+          "titre": "Inscription",
+          "url": "https://example.com"
+        }
+      ],
+      "acces": "Vol jusqu'à Podgorica, puis environ 2 h 30 de route jusqu'à Žabljak. Parking près du lac.",
+      "retrait_dossard": "La veille, 15 h à 19 h, au village départ.",
+      "ravitos": [
+        {
+          "km": 9,
+          "nom": "Ravito 1",
+          "type": "liquide"
+        },
+        {
+          "km": 18,
+          "nom": "Ravito 2",
+          "type": "complet"
+        },
+        {
+          "km": 27,
+          "nom": "Ravito 3",
+          "type": "complet"
+        }
+      ],
+      "barrieres": [
+        {
+          "km": 18,
+          "lieu": "Ravito 2",
+          "heure": "11:30"
+        },
+        {
+          "km": 27,
+          "lieu": "Ravito 3",
+          "heure": "14:30"
+        }
+      ],
+      "materiel": [
+        "Réserve d'eau 1 L minimum",
+        "Gobelet personnel",
+        "Couverture de survie",
+        "Sifflet",
+        "Veste imperméable",
+        "Téléphone chargé"
+      ],
+      "notes": "Objectif : finir en moins de 6 h, gérer la dernière montée.",
+      "sport": "Trail",
+      "logement": [
+        {
+          "nom": "Appartement à Žabljak (exemple)",
+          "url": "https://example.com",
+          "adresse": "Njegoševa 12, Žabljak, Monténégro",
+          "arrivee": "2027-06-10",
+          "depart": "2027-06-13",
+          "reference": "À compléter"
+        }
+      ],
+      "transports": [
+        {
+          "type": "vol",
+          "titre": "Aller Lyon → Podgorica (exemple)",
+          "date": "2027-06-10",
+          "heure": "09:40",
+          "reference": "À compléter",
+          "url": "https://example.com"
+        },
+        {
+          "type": "voiture",
+          "titre": "Location de voiture, aéroport de Podgorica (exemple)",
+          "date": "2027-06-10",
+          "fin": "2027-06-13",
+          "reference": "À compléter"
+        },
+        {
+          "type": "vol",
+          "titre": "Retour Podgorica → Lyon (exemple)",
+          "date": "2027-06-13",
+          "heure": "18:15",
+          "reference": "À compléter"
+        }
+      ]
+    },
+    {
+      "id": "exemple-candice-2027",
+      "nom": "Semi-marathon (exemple)",
+      "coureurs": [
+        "candice"
+      ],
+      "statut": "envisagé",
+      "date": "2027-04-18",
+      "lieu": "À définir",
+      "pays": "France",
+      "distance_km": 21.1,
+      "denivele_pos": 100,
+      "exemple": "Fiche exemple pour montrer une course de Candice. À supprimer.",
+      "notes": "Une course sans trace GPX s'affiche quand même, sans carte.",
+      "sport": "Course sur route"
+    },
+    {
+      "id": "exemple-duo-2027",
+      "nom": "Trail en duo (exemple)",
+      "coureurs": [
+        "aurele",
+        "candice"
+      ],
+      "statut": "envisagé",
+      "date": "2027-05-22",
+      "lieu": "À définir",
+      "pays": "France",
+      "sport": "Trail",
+      "distance_km": 15,
+      "denivele_pos": 600,
+      "exemple": "Fiche exemple : une course à deux, pour montrer l'affichage. À supprimer."
+    }
+  ]
+}
