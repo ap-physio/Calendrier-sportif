@@ -152,9 +152,13 @@
 
   // « 7h », « 7h30 », « 07:30:00 », « 7.30 » → « 07:30 » (format du champ heure)
   function heureNorm(v) {
-    const m = String(v || "").match(/(\d{1,2})\s*(?:h|:|\.)\s*(\d{2})?/i);
-    if (!m || +m[1] > 23) return "";
-    return String(m[1]).padStart(2, "0") + ":" + (m[2] || "00");
+    const m = String(v || "").match(/(\d{1,2})\s*(?:h|:|\.)?\s*(\d{2})?\s*(a\.?\s?m\.?|p\.?\s?m\.?)?/i);
+    if (!m) return "";
+    let h = +m[1];
+    if (m[3] && /p/i.test(m[3]) && h < 12) h += 12;
+    if (m[3] && /a/i.test(m[3]) && h === 12) h = 0;
+    if (h > 23) return "";
+    return String(h).padStart(2, "0") + ":" + (m[2] || "00");
   }
 
   async function remplirAuto(form) {
