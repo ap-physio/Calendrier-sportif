@@ -217,9 +217,9 @@
     const auj = iso(new Date());
 
     let h = `<div class="cal-nav">
-      <button class="navbtn" id="calPrev" type="button" aria-label="Mois précédents">‹</button>
+      <button class="navbtn" id="calPrev" type="button" aria-label="Mois précédent">‹</button>
       <div class="cal-title">${titre}</div>
-      <button class="navbtn" id="calNext" type="button" aria-label="Mois suivants">›</button>
+      <button class="navbtn" id="calNext" type="button" aria-label="Mois suivant">›</button>
     </div><div class="months" style="grid-template-columns:repeat(${nb},1fr)">`;
     for (let k = 0; k < nb; k++) {
       const m0 = new Date(debutMois.getFullYear(), debutMois.getMonth() + k, 1);
@@ -245,8 +245,8 @@
     cal.innerHTML = h;
 
     const decaler = n => { debutMois = new Date(debutMois.getFullYear(), debutMois.getMonth() + n, 1); calendrier(courses); };
-    cal.querySelector("#calPrev").onclick = () => decaler(-nb);
-    cal.querySelector("#calNext").onclick = () => decaler(nb);
+    cal.querySelector("#calPrev").onclick = () => decaler(-1);
+    cal.querySelector("#calNext").onclick = () => decaler(1);
     cal.querySelectorAll("button.day").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); ouvrirJour(cal, b, parJour[b.dataset.date] || [], b.dataset.date); }));
   }
 
