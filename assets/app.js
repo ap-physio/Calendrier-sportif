@@ -27,7 +27,7 @@
   if (!DB) {
     fetch("data/courses.json", { cache: "no-cache" })
       .then(r => r.json())
-      .then(d => { DATA = d; document.getElementById("titre").textContent = "Courses " + d.annee; route(); })
+      .then(d => { DATA = d; route(); })
       .catch(e => { app.innerHTML = `<p>Impossible de charger les courses : ${esc(e.message)}</p>`; });
   } else {
     let recuperation = false;
@@ -145,7 +145,7 @@
   }
 
   function renderListe() {
-    document.title = "Courses " + DATA.annee;
+    document.title = "Calendrier Courses";
     const courses = DATA.courses
       .filter(c => filtre === "tous" || (c.coureurs || []).includes(filtre))
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -361,7 +361,7 @@
   }
 
   function renderDocsAnnee() {
-    document.title = "Documents · Courses " + DATA.annee;
+    document.title = "Documents · Calendrier Courses";
     app.innerHTML = `<a class="back" href="#/">← Calendrier</a>
       <h1>Documents de l'année</h1>
       <p class="muted">Licences, certificats médicaux, assurances… valables pour toute la saison.</p>
@@ -372,7 +372,7 @@
 
   /* ---------- Fiche course ---------- */
   function renderCourse(c) {
-    document.title = c.nom + " · Courses " + DATA.annee;
+    document.title = c.nom + " · Calendrier Courses";
     const j = joursAvant(c.date);
     const noms = (c.coureurs || []).map(id => (DATA.coureurs[id] || { nom: id }).nom).join(" et ");
     const liens = (c.liens || []).map(l => `<a class="btn ghost" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.titre)} ↗</a>`).join("");

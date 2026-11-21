@@ -1,6 +1,6 @@
 {
-  "name": "Courses 2027",
-  "short_name": "Courses",
+  "name": "Calendrier Courses",
+  "short_name": "Calendrier",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",
