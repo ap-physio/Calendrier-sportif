@@ -415,7 +415,7 @@
         <h2>🚗 Rejoindre le départ</h2>
         <p class="muted" id="go-dest">${destTexte ? esc(destTexte) : "Départ de la trace GPX"}</p>
         <div class="actions">
-          <a class="btn" id="go-gmaps" target="_blank" rel="noopener" href="${destTexte ? lienGmaps(destTexte) : "#"}">Google Maps</a>
+          <a class="btn" id="go-gmaps" target="_blank" rel="noopener" data-dest="${esc(destTexte)}" href="${destTexte ? lienGmaps(destTexte) : "#"}">Google Maps</a>
           <a class="btn ghost" id="go-waze" target="_blank" rel="noopener" href="${destTexte ? lienWaze(destTexte) : "#"}">Waze</a>
         </div>
       </div>`;
@@ -510,6 +510,7 @@
         if (!c.depart && app.querySelector("#go-gmaps")) {
           const p0 = trace[0], ll = `${p0.lat.toFixed(6)},${p0.lon.toFixed(6)}`;
           app.querySelector("#go-gmaps").href = lienGmaps(ll);
+          app.querySelector("#go-gmaps").dataset.dest = ll;
           app.querySelector("#go-waze").href = `https://waze.com/ul?ll=${ll}&navigate=yes`;
           app.querySelector("#go-dest").textContent = "Départ de la trace GPX" + (destTexte ? ` (${destTexte})` : "");
         }
@@ -552,6 +553,19 @@
 
   /* ---------- GPX ---------- */
   window.GPX = { parse: t => parseGpx(t), stats: t => stats(t) };
+  // Sur iPhone / iPad, ouvrir l'app Google Maps elle-même ; si elle n'est pas installée, la page web prend le relais
+  document.addEventListener("click", e => {
+    const a = e.target.closest("#go-gmaps");
+    if (!a || !a.dataset.dest || !/iPhone|iPad|iPod/.test(navigator.userAgent) && !(navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) return;
+    e.preventDefault();
+    const web = a.href;
+    let parti = false;
+    const vu = () => { if (document.hidden) parti = true; };
+    document.addEventListener("visibilitychange", vu);
+    location.href = "comgooglemaps://?daddr=" + encodeURIComponent(a.dataset.dest) + "&directionsmode=driving";
+    setTimeout(() => { document.removeEventListener("visibilitychange", vu); if (!parti && !document.hidden) window.open(web, "_blank"); }, 1500);
+  });
+
   function lienGmaps(dest) { return "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(dest); }
   function lienWaze(dest) { return "https://waze.com/ul?q=" + encodeURIComponent(dest) + "&navigate=yes"; }
 
