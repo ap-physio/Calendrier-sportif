@@ -132,7 +132,11 @@
 
     // Lecture automatique de la page d'une course (fonction Supabase « lire-course » + Claude)
     async lireCourse(url, epreuve) {
-      const { data, error } = await sb.functions.invoke("lire-course", { body: { url, epreuve } });
+      let data, error;
+      for (const nom of (C.fonctionsLecture || ["lire-course"])) {
+        ({ data, error } = await sb.functions.invoke(nom, { body: { url, epreuve } }));
+        if (!(error && error.context?.status === 404)) break; // fonction absente sous ce nom : essayer le suivant
+      }
       if (error) {
         let msg = error.message;
         try { const j = await error.context.json(); if (j?.erreur) msg = j.erreur; } catch (e) {}
