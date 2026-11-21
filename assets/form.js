@@ -29,9 +29,9 @@
     return `<div class="f-row" data-liste="${nom}">${cols.map(c => champ(nom, c, val)).join("")}<button type="button" class="f-del" aria-label="Retirer cette ligne">×</button></div>`;
   }
 
-  function render(app, c, DATA, onSaved, onCancel) {
+  function render(app, c, DATA, onSaved, dateInitiale) {
     const nouveau = !c;
-    c = c || { coureurs: window.DB?.moi ? [window.DB.moi.coureur] : [], statut: "envisagé" };
+    c = c || { coureurs: window.DB?.moi ? [window.DB.moi.coureur] : [], statut: "envisagé", date: dateInitiale };
     const coureurs = Object.entries(DATA.coureurs);
     let html = `<a class="back" href="#/">← Toutes les courses</a>
       <h1>${nouveau ? "Ajouter une course" : "Modifier : " + esc(c.nom)}</h1>

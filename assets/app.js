@@ -115,7 +115,8 @@
     if (mapInstance) { mapInstance.remove(); mapInstance = null; }
     onResize = null;
     if (DB && location.hash === "#/documents") return renderDocsAnnee();
-    if (DB && location.hash === "#/ajouter") return window.Formulaire.render(app, null, DATA, apresEnregistrement);
+    const ma = location.hash.match(/^#\/ajouter(?:\/(\d{4}-\d{2}-\d{2}))?$/);
+    if (DB && ma) return window.Formulaire.render(app, null, DATA, apresEnregistrement, ma[1]);
     const mm = location.hash.match(/^#\/modifier\/(.+)$/);
     if (DB && mm) {
       const c = DATA.courses.find(x => x.id === decodeURIComponent(mm[1]));
@@ -235,7 +236,8 @@
           const pts = [];
           cs.forEach(c => (c.coureurs || []).forEach(id => pts.push((DATA.coureurs[id] || {}).couleur || "#888")));
           h += `<button type="button" class="${cls}" data-date="${key}" aria-label="${j} ${MOIS[m0.getMonth()]} : ${esc(cs.map(c => c.nom).join(", "))}"><span class="n">${j}</span><span class="pts">${pts.map(p => `<i style="background:${esc(p)}"></i>`).join("")}</span></button>`;
-        } else h += `<div class="${cls}"><span class="n">${j}</span></div>`;
+        } else if (DB) h += `<button type="button" class="${cls} empty" data-date="${key}" aria-label="${j} ${MOIS[m0.getMonth()]} : ajouter une course"><span class="n">${j}</span></button>`;
+        else h += `<div class="${cls}"><span class="n">${j}</span></div>`;
       }
       h += `</div></div>`;
     }
@@ -245,7 +247,7 @@
     const decaler = n => { debutMois = new Date(debutMois.getFullYear(), debutMois.getMonth() + n, 1); calendrier(courses); };
     cal.querySelector("#calPrev").onclick = () => decaler(-nb);
     cal.querySelector("#calNext").onclick = () => decaler(nb);
-    cal.querySelectorAll("button.day").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); ouvrirJour(cal, b, parJour[b.dataset.date]); }));
+    cal.querySelectorAll("button.day").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); ouvrirJour(cal, b, parJour[b.dataset.date] || [], b.dataset.date); }));
   }
 
   function fermerJour() {
@@ -255,12 +257,12 @@
   document.addEventListener("click", e => { if (!e.target.closest(".daypop")) fermerJour(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") fermerJour(); });
 
-  function ouvrirJour(cal, cell, cs) {
+  function ouvrirJour(cal, cell, cs, date) {
     const deja = cell.classList.contains("open");
     fermerJour();
     if (deja) return;
     cell.classList.add("open");
-    const d = parseDate(cs[0].date);
+    const d = parseDate(date);
     const pop = document.createElement("div");
     pop.className = "daypop";
     pop.setAttribute("role", "dialog");
@@ -268,7 +270,8 @@
       cs.map(c => `<div class="pop-race">
         <a class="pop-name" href="#/course/${encodeURIComponent(c.id)}">${esc(c.nom)}</a>
         <div class="pop-tags">${tags(c)}</div>
-      </div>`).join("");
+      </div>`).join("") +
+      (DB ? `<a class="pop-add ${cs.length ? "" : "seul"}" href="#/ajouter/${date}">+ Ajouter une course${cs.length ? " ce jour" : ""}</a>` : "");
     cal.appendChild(pop);
     const rc = cal.getBoundingClientRect(), rb = cell.getBoundingClientRect();
     const pw = pop.offsetWidth, ph = pop.offsetHeight;

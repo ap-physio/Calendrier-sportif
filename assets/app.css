@@ -253,3 +253,10 @@ ul.check input { accent-color: var(--accent); width: 18px; height: 18px; }
   .brand span { display: none; }
   .nav { gap: 8px; }
 }
+
+/* Jour vide : ajouter une course */
+.day.empty { cursor: pointer; }
+.day.empty:hover { background: var(--chip-bg); }
+.pop-add { text-align: center; font-weight: 700; font-size: 14px; color: var(--accent); text-decoration: none; padding: 8px; border-radius: 8px; border: 1px dashed var(--accent); }
+.pop-add.seul { font-size: 15px; padding: 12px 8px; }
+.pop-add:hover { background: var(--accent-soft); }
