@@ -283,7 +283,7 @@
     pop.innerHTML = `<div class="pop-date">${d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</div>` +
       cs.map(c => `<div class="pop-race">
         <a class="pop-name" href="#/course/${encodeURIComponent(c.id)}">${esc(c.nom)}</a>
-        <div class="pop-tags">${tags(c)}</div>
+        <div class="pop-tags">${tags(c)}<span class="tag insc ${c.statut === "inscrit" ? "oui" : "non"}">${c.statut === "inscrit" ? "✓ Inscrit" : "Non inscrit"}</span></div>
       </div>`).join("") +
       (DB ? `<a class="pop-add ${cs.length ? "" : "seul"}" href="#/ajouter/${date}">+ Ajouter une course${cs.length ? " ce jour" : ""}</a>` : "");
     cal.appendChild(pop);

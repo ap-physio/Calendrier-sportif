@@ -272,3 +272,9 @@ ul.check input { accent-color: var(--accent); width: 18px; height: 18px; }
 .auto-plus label { display: grid; gap: 4px; margin-bottom: 10px; }
 .auto-plus textarea { width: 100%; }
 .gpx-note { margin: 0; font-size: 13px; color: var(--ok); }
+
+/* Encart inscrit / non inscrit dans la case ouverte */
+.pop-tags { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; }
+.tag.insc { padding: 0 8px; font-weight: 700; }
+.tag.insc.oui { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.tag.insc.non { background: var(--chip-bg); color: var(--muted); border: 1px dashed var(--line); }
