@@ -321,6 +321,24 @@
     const logis = logistique(c);
     if (logis) blocs.push(logis);
     if (c.notes) blocs.push(`<div class="box"><h2>Notes</h2><p>${esc(c.notes)}</p></div>`);
+    if (DB) {
+      const docs = c.documents || [];
+      const taille = n => n > 1048576 ? (n / 1048576).toFixed(1).replace(".", ",") + " Mo" : Math.max(1, Math.round(n / 1024)) + " Ko";
+      const icone = t => /pdf/.test(t) ? "PDF" : /^image\//.test(t) ? "IMG" : "DOC";
+      blocs.push(`<div class="box docs"><h2>Documents</h2>
+        ${docs.length ? `<ul class="doclist">${docs.map((d, i) => `<li>
+          <span class="docicon">${icone(d.type)}</span>
+          <div class="docinfo"><button class="linkbtn docopen" type="button" data-i="${i}">${esc(d.nom)}</button>
+            <div class="muted">${taille(d.taille || 0)}${d.par ? " · ajouté par " + esc(DATA.noms?.[d.par] || DATA.coureurs[d.par]?.nom || d.par) : ""}</div></div>
+          <button class="f-del docdel" type="button" data-i="${i}" aria-label="Retirer ${esc(d.nom)}">×</button>
+          <div class="confirm docconf" data-i="${i}" hidden>Retirer ce document ?
+            <button class="btn danger-plein docok" type="button" data-i="${i}">Oui, retirer</button>
+            <button class="btn ghost docnon" type="button" data-i="${i}">Annuler</button></div>
+        </li>`).join("")}</ul>` : `<p class="muted">Billets, assurance annulation, réservations, règlement… (PDF, photos, tout type de fichier)</p>`}
+        <label class="btn ghost docadd"><input type="file" id="doc-file" multiple hidden>+ Joindre un document</label>
+        <p class="f-err" id="doc-err" role="alert" hidden></p>
+      </div>`);
+    }
     if (blocs.length) html += `<div class="grid2">${blocs.join("")}</div>`;
     if (DB) {
       const nom = id => DATA.noms?.[id] || DATA.coureurs[id]?.nom || id || "?";
@@ -354,6 +372,35 @@
         try { await DB.supprimer(c); DATA = await DB.charger(); location.hash = "#/"; }
         catch (ex) { conf.textContent = "Suppression impossible : " + ex.message; }
       };
+      const derr = app.querySelector("#doc-err");
+      const recharger = async () => { DATA = await DB.charger(); const n = DATA.courses.find(x => x.id === c.id); if (n) renderCourse(n); };
+      app.querySelector("#doc-file").addEventListener("change", async e => {
+        const fichiers = [...e.target.files];
+        if (!fichiers.length) return;
+        const lab = app.querySelector(".docadd");
+        lab.classList.add("busy"); lab.lastChild.textContent = "Envoi en cours…";
+        try {
+          let cur = c;
+          for (const f of fichiers) {
+            if (f.size > 50 * 1048576) throw new Error(`« ${f.name} » dépasse 50 Mo.`);
+            await DB.ajouterDocument(cur, f);
+            DATA = await DB.charger(); cur = DATA.courses.find(x => x.id === c.id) || cur;
+          }
+          renderCourse(cur);
+        } catch (ex) { derr.textContent = ex.message; derr.hidden = false; lab.classList.remove("busy"); lab.lastChild.textContent = "+ Joindre un document"; }
+      });
+      app.querySelectorAll(".docopen").forEach(b => b.onclick = async () => {
+        const d = c.documents[b.dataset.i];
+        try { location.href = await DB.lienDocument(d.chemin, d.nom); }
+        catch (ex) { derr.textContent = "Ouverture impossible : " + ex.message; derr.hidden = false; }
+      });
+      app.querySelectorAll(".docdel").forEach(b => b.onclick = () => { app.querySelector(`.docconf[data-i="${b.dataset.i}"]`).hidden = false; });
+      app.querySelectorAll(".docnon").forEach(b => b.onclick = () => { b.parentElement.hidden = true; });
+      app.querySelectorAll(".docok").forEach(b => b.onclick = async () => {
+        b.disabled = true;
+        try { await DB.supprimerDocument(c, c.documents[b.dataset.i].chemin); await recharger(); }
+        catch (ex) { derr.textContent = ex.message; derr.hidden = false; }
+      });
       app.querySelector("#histo").addEventListener("toggle", async ev => {
         if (!ev.target.open || ev.target.dataset.ok) return;
         ev.target.dataset.ok = 1;

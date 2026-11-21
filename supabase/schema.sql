@@ -118,3 +118,16 @@ grant usage on schema public to authenticated;
 grant select on public.membres to authenticated;
 grant select, insert, update, delete on public.courses to authenticated;
 grant select on public.historique to authenticated;
+
+-- 7. Documents joints
+insert into storage.buckets (id, name, public) values ('documents', 'documents', false)
+on conflict (id) do nothing;
+
+drop policy if exists "membres lisent documents" on storage.objects;
+create policy "membres lisent documents" on storage.objects for select to authenticated using (bucket_id = 'documents' and public.est_membre());
+drop policy if exists "membres ajoutent documents" on storage.objects;
+create policy "membres ajoutent documents" on storage.objects for insert to authenticated with check (bucket_id = 'documents' and public.est_membre());
+drop policy if exists "membres remplacent documents" on storage.objects;
+create policy "membres remplacent documents" on storage.objects for update to authenticated using (bucket_id = 'documents' and public.est_membre());
+drop policy if exists "membres suppriment documents" on storage.objects;
+create policy "membres suppriment documents" on storage.objects for delete to authenticated using (bucket_id = 'documents' and public.est_membre());

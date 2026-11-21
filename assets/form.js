@@ -103,6 +103,7 @@
         lieu: val("#f-lieu") || undefined, pays: val("#f-pays") || undefined,
         distance_km: num("#f-dist"), denivele_pos: num("#f-dp"),
         gpx: c.gpx || undefined,
+        documents: c.documents || undefined,
         acces: val("#f-acces") || undefined, retrait_dossard: val("#f-dossard") || undefined,
         materiel: val("#f-mat").split("\n").map(s => s.trim()).filter(Boolean),
         notes: val("#f-notes") || undefined

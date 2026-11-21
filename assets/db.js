@@ -95,7 +95,34 @@
       const { error } = await sb.from("courses").delete().eq("id", c.id);
       if (error) throw new Error(error.message);
       if (c.gpx) await sb.storage.from("gpx").remove([c.gpx]);
+      const docs = (c.documents || []).map(d => d.chemin);
+      if (docs.length) await sb.storage.from("documents").remove(docs);
     },
+
+    // Documents joints (assurance, billets…) : fichier dans le stockage privé + liste dans la fiche
+    async ajouterDocument(c, fichier) {
+      const propre = fichier.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]+/g, "-").slice(-80);
+      const chemin = `${c.id}/${Date.now()}-${propre}`;
+      const up = await sb.storage.from("documents").upload(chemin, fichier, { contentType: fichier.type || "application/octet-stream" });
+      if (up.error) throw new Error("Envoi impossible : " + up.error.message);
+      const data = DB.donnees(c);
+      data.documents = (data.documents || []).concat([{ nom: fichier.name, chemin, type: fichier.type || "", taille: fichier.size, par: DB.moi?.coureur, le: new Date().toISOString() }]);
+      const { error } = await sb.from("courses").update({ data }).eq("id", c.id);
+      if (error) { await sb.storage.from("documents").remove([chemin]); throw new Error(error.message); }
+    },
+    async supprimerDocument(c, chemin) {
+      const data = DB.donnees(c);
+      data.documents = (data.documents || []).filter(d => d.chemin !== chemin);
+      const { error } = await sb.from("courses").update({ data }).eq("id", c.id);
+      if (error) throw new Error(error.message);
+      await sb.storage.from("documents").remove([chemin]);
+    },
+    async lienDocument(chemin, nom) {
+      const { data, error } = await sb.storage.from("documents").createSignedUrl(chemin, 300, { download: nom || true });
+      if (error) throw new Error(error.message);
+      return data.signedUrl;
+    },
+    donnees(c) { const d = Object.assign({}, c); delete d.id; delete d._meta; return d; },
 
     async historique(id) {
       const { data, error } = await sb.from("historique").select("action, par, le").eq("course_id", id).order("le", { ascending: false }).limit(30);

@@ -225,3 +225,16 @@ ul.check input { accent-color: var(--accent); width: 18px; height: 18px; }
 .btn.danger-plein { background: #c92a2a; }
 .confirm { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 10px; background: var(--accent-soft); color: var(--ink); }
 .box.vide { display: grid; gap: 10px; justify-items: start; }
+
+/* Documents joints */
+.docs { grid-column: 1 / -1; display: grid; gap: 10px; justify-items: start; }
+.docs h2 { margin: 0; }
+.doclist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; width: 100%; }
+.doclist li { display: grid; grid-template-columns: 40px 1fr 36px; gap: 10px; align-items: center; }
+.doclist .confirm { grid-column: 1 / -1; }
+.docicon { width: 40px; height: 40px; border-radius: 8px; background: var(--chip-bg); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: var(--muted); }
+.docinfo { min-width: 0; font-size: 14px; }
+.docopen { color: var(--ink); font-size: 15px; font-weight: 600; text-align: left; padding: 0; overflow-wrap: anywhere; }
+.docadd { cursor: pointer; }
+.docadd.busy { opacity: .6; pointer-events: none; }
+[hidden] { display: none !important; }
