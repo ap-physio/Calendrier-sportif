@@ -260,3 +260,9 @@ ul.check input { accent-color: var(--accent); width: 18px; height: 18px; }
 .pop-add { text-align: center; font-weight: 700; font-size: 14px; color: var(--accent); text-decoration: none; padding: 8px; border-radius: 8px; border: 1px dashed var(--accent); }
 .pop-add.seul { font-size: 15px; padding: 12px 8px; }
 .pop-add:hover { background: var(--accent-soft); }
+
+/* Remplissage automatique */
+.form fieldset.auto { background: var(--accent-soft); border-color: transparent; }
+.auto-go { display: flex; align-items: end; }
+.auto-msg { margin: 0; font-size: 14px; padding: 10px 12px; border-radius: 10px; background: var(--card); color: var(--ink); }
+.auto-msg.ko { color: #c92a2a; }

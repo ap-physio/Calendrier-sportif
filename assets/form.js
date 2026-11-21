@@ -36,6 +36,12 @@
     let html = `<a class="back" href="#/">← Toutes les courses</a>
       <h1>${nouveau ? "Ajouter une course" : "Modifier : " + esc(c.nom)}</h1>
       <form id="fcourse" class="form" novalidate>
+        <fieldset class="auto"><legend>Remplir depuis le site de la course</legend>
+          <label class="f-full"><span>Lien de la page de la course</span><input id="a-url" type="url" inputmode="url" placeholder="https://…"></label>
+          <label><span>Épreuve (si plusieurs, ex. « 35 km »)</span><input id="a-epreuve"></label>
+          <div class="auto-go"><button class="btn" type="button" id="a-go">Remplir automatiquement</button></div>
+          <p class="f-full auto-msg" id="a-msg" role="status" hidden></p>
+        </fieldset>
         <fieldset><legend>L'essentiel</legend>
           <label class="f-full"><span>Nom de la course *</span><input id="f-nom" required value="${esc(c.nom)}"></label>
           <label><span>Date *</span><input id="f-date" type="date" required value="${esc(c.date)}"></label>
@@ -73,6 +79,16 @@
     window.scrollTo(0, 0);
 
     const form = app.querySelector("#fcourse");
+    app.querySelector("#a-go").onclick = () => remplirAuto(form);
+    // Les dates des trajets / logement s'ouvrent sur la date de la course plutôt que sur aujourd'hui
+    const caleSurCourse = e => {
+      const el = e.target;
+      if (!el.matches || !el.matches('.f-row input[type="date"]') || el.value) return;
+      const ref = form.querySelector("#f-date").value;
+      if (ref) el.value = ref;
+    };
+    form.addEventListener("pointerdown", caleSurCourse, true);
+    form.addEventListener("focusin", caleSurCourse);
     form.addEventListener("click", e => {
       const add = e.target.closest(".f-add");
       if (add) {
@@ -132,6 +148,51 @@
         bouton.disabled = false; bouton.textContent = nouveau ? "Ajouter la course" : "Enregistrer";
       }
     });
+  }
+
+  async function remplirAuto(form) {
+    const msg = form.querySelector("#a-msg"), go = form.querySelector("#a-go");
+    const url = form.querySelector("#a-url").value.trim();
+    if (!/^https?:\/\//.test(url)) { msg.textContent = "Colle d'abord l'adresse complète de la page (https://…)."; msg.className = "f-full auto-msg ko"; msg.hidden = false; return; }
+    go.disabled = true; go.textContent = "Lecture de la page… (20 à 60 s)";
+    msg.hidden = true;
+    try {
+      const r = await window.DB.lireCourse(url, form.querySelector("#a-epreuve").value.trim());
+      const c = r.course || {}, remplis = [];
+      const met = (id, v, nom) => { const el = form.querySelector(id); if (v != null && v !== "" && !el.value.trim()) { el.value = v; remplis.push(nom); } };
+      met("#f-nom", c.nom, "nom"); met("#f-date", c.date, "date"); met("#f-heure", c.heure_depart, "heure");
+      met("#f-sport", c.sport, "sport"); met("#f-lieu", c.lieu, "lieu"); met("#f-pays", c.pays, "pays");
+      met("#f-dist", c.distance_km, "distance"); met("#f-dp", c.denivele_pos, "D+");
+      met("#f-acces", c.acces, "accès"); met("#f-dossard", c.retrait_dossard, "dossards");
+      met("#f-mat", (c.materiel || []).join("\n"), "matériel"); met("#f-notes", c.notes, "notes");
+      const liens = [{ titre: "Site de la course", url }].concat((c.liens || []).filter(l => l.url !== url));
+      const listes = { liens, ravitos: c.ravitos || [], barrieres: c.barrieres || [] };
+      for (const [nom, vals] of Object.entries(listes)) {
+        const box = form.querySelector(`.f-liste[data-nom="${nom}"] .f-rows`);
+        if (!vals.length || box.children.length) continue;
+        const def = LISTES.find(l => l[0] === nom);
+        box.innerHTML = vals.slice(0, 30).map(v => ligne(nom, def[2], v)).join("");
+        remplis.push(nom === "liens" ? "liens" : nom === "ravitos" ? "ravitos" : "barrières");
+      }
+      if (r.gpx) {
+        const input = form.querySelector("#f-gpx");
+        if (!input.files.length) {
+          try {
+            const dt = new DataTransfer();
+            dt.items.add(new File([r.gpx], r.gpx_nom || "trace.gpx", { type: "application/gpx+xml" }));
+            input.files = dt.files; remplis.push("GPX");
+          } catch (e) {}
+        }
+      }
+      let t = remplis.length ? `Rempli : ${remplis.join(", ")}. Vérifie avant d'enregistrer.` : "Rien de nouveau trouvé sur cette page (les champs déjà remplis ne sont pas modifiés).";
+      if (c.epreuve_choisie && (c.autres_epreuves || []).length) t += ` Épreuve retenue : ${c.epreuve_choisie}. Autres épreuves : ${c.autres_epreuves.join(", ")}. Pour une autre, indique-la dans « Épreuve » et relance après avoir vidé les champs.`;
+      if (r.avertissement) t += " " + r.avertissement;
+      if (r.tronque) t += " (Page très longue : seule la première partie a été lue.)";
+      msg.textContent = t; msg.className = "f-full auto-msg ok";
+    } catch (e) {
+      msg.textContent = e.message; msg.className = "f-full auto-msg ko";
+    }
+    msg.hidden = false; go.disabled = false; go.textContent = "Remplir automatiquement";
   }
 
   window.Formulaire = { render };

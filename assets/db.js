@@ -130,6 +130,18 @@
     },
     donnees(c) { const d = Object.assign({}, c); delete d.id; delete d._meta; delete d._existe; return d; },
 
+    // Lecture automatique de la page d'une course (fonction Supabase « lire-course » + Claude)
+    async lireCourse(url, epreuve) {
+      const { data, error } = await sb.functions.invoke("lire-course", { body: { url, epreuve } });
+      if (error) {
+        let msg = error.message;
+        try { const j = await error.context.json(); if (j?.erreur) msg = j.erreur; } catch (e) {}
+        if (/Failed to send|not found|404/i.test(msg)) msg = "La lecture automatique n'est pas encore installée dans Supabase.";
+        throw new Error(msg);
+      }
+      return data;
+    },
+
     async historique(id) {
       const { data, error } = await sb.from("historique").select("action, par, le").eq("course_id", id).order("le", { ascending: false }).limit(30);
       if (error) throw error;
