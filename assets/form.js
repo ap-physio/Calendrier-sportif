@@ -150,6 +150,13 @@
     });
   }
 
+  // « 7h », « 7h30 », « 07:30:00 », « 7.30 » → « 07:30 » (format du champ heure)
+  function heureNorm(v) {
+    const m = String(v || "").match(/(\d{1,2})\s*(?:h|:|\.)\s*(\d{2})?/i);
+    if (!m || +m[1] > 23) return "";
+    return String(m[1]).padStart(2, "0") + ":" + (m[2] || "00");
+  }
+
   async function remplirAuto(form) {
     const msg = form.querySelector("#a-msg"), go = form.querySelector("#a-go");
     const url = form.querySelector("#a-url").value.trim();
@@ -159,14 +166,20 @@
     try {
       const r = await window.DB.lireCourse(url, form.querySelector("#a-epreuve").value.trim());
       const c = r.course || {}, remplis = [];
-      const met = (id, v, nom) => { const el = form.querySelector(id); if (v != null && v !== "" && !el.value.trim()) { el.value = v; remplis.push(nom); } };
+      const met = (id, v, nom) => {
+        const el = form.querySelector(id);
+        if (v == null || v === "" || el.value.trim()) return;
+        if (el.type === "time") v = heureNorm(v);
+        el.value = v;
+        if (el.value) remplis.push(nom); // une valeur refusée par le champ n'est pas annoncée comme remplie
+      };
       met("#f-nom", c.nom, "nom"); met("#f-date", c.date, "date"); met("#f-heure", c.heure_depart, "heure");
       met("#f-sport", c.sport, "sport"); met("#f-lieu", c.lieu, "lieu"); met("#f-pays", c.pays, "pays");
       met("#f-dist", c.distance_km, "distance"); met("#f-dp", c.denivele_pos, "D+");
       met("#f-acces", c.acces, "accès"); met("#f-dossard", c.retrait_dossard, "dossards");
       met("#f-mat", (c.materiel || []).join("\n"), "matériel"); met("#f-notes", c.notes, "notes");
       const liens = [{ titre: "Site de la course", url }].concat((c.liens || []).filter(l => l.url !== url));
-      const listes = { liens, ravitos: c.ravitos || [], barrieres: c.barrieres || [] };
+      const listes = { liens, ravitos: c.ravitos || [], barrieres: (c.barrieres || []).map(b => Object.assign({}, b, { heure: heureNorm(b.heure) })) };
       for (const [nom, vals] of Object.entries(listes)) {
         const box = form.querySelector(`.f-liste[data-nom="${nom}"] .f-rows`);
         if (!vals.length || box.children.length) continue;
