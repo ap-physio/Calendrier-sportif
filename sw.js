@@ -9,7 +9,7 @@ self.addEventListener("fetch", e => {
   if (url.origin === location.origin) {
     // Réseau d'abord (données toujours à jour), cache si hors-ligne
     // no-cache : toujours revérifier auprès du serveur (sinon le navigateur garde l'ancienne version jusqu'à 10 min)
-    const req = e.request.mode === "navigate" ? e.request : new Request(e.request, { cache: "no-cache" });
+    const req = e.request.mode === "navigate" ? new Request(e.request.url, { cache: "no-cache", credentials: "same-origin" }) : new Request(e.request, { cache: "no-cache" });
     e.respondWith(fetch(req).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; }).catch(() => caches.match(e.request)));
   } else if (/tile|arcgisonline/.test(url.hostname + url.pathname)) {
     // Tuiles de carte : cache d'abord
