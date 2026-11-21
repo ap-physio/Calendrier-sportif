@@ -21,21 +21,117 @@
   function fmtKm(x) { return (Math.round(x * 10) / 10).toLocaleString("fr-FR") + " km"; }
   function fmtM(x) { return Math.round(x).toLocaleString("fr-FR") + " m"; }
 
-  fetch("data/courses.json", { cache: "no-cache" })
-    .then(r => r.json())
-    .then(d => { DATA = d; document.getElementById("titre").textContent = "Courses " + d.annee; route(); })
-    .catch(e => { app.innerHTML = `<p>Impossible de charger les courses : ${esc(e.message)}</p>`; });
-  window.addEventListener("hashchange", route);
+  const DB = window.DB && window.DB.actif ? window.DB : null;
+  window.addEventListener("hashchange", () => DATA && route());
+
+  if (!DB) {
+    fetch("data/courses.json", { cache: "no-cache" })
+      .then(r => r.json())
+      .then(d => { DATA = d; document.getElementById("titre").textContent = "Courses " + d.annee; route(); })
+      .catch(e => { app.innerHTML = `<p>Impossible de charger les courses : ${esc(e.message)}</p>`; });
+  } else {
+    let recuperation = false;
+    DB.onAuth(evt => {
+      if (evt === "PASSWORD_RECOVERY") { recuperation = true; renderNouveauMdp(); }
+      else if (evt === "SIGNED_OUT") { DATA = null; renderNav(); renderLogin(); }
+    });
+    DB.session().then(s => { if (!recuperation) (s ? demarrer() : renderLogin()); });
+  }
+
+  async function demarrer() {
+    app.innerHTML = `<p class="muted">Chargement…</p>`;
+    try {
+      DATA = await DB.charger();
+      renderNav();
+      if (!DB.moi && !DATA.horsLigne) {
+        app.innerHTML = `<div class="auth"><h1>Accès réservé</h1><p>Ce compte n'est pas autorisé à voir le calendrier.</p><button class="btn ghost" id="out" type="button">Se déconnecter</button></div>`;
+        app.querySelector("#out").onclick = () => DB.deconnexion();
+        return;
+      }
+      route();
+    } catch (e) {
+      app.innerHTML = `<p>Impossible de charger les courses : ${esc(e.message)}</p><p><button class="btn ghost" type="button" id="retry">Réessayer</button></p>`;
+      app.querySelector("#retry").onclick = demarrer;
+    }
+  }
+
+  function renderNav() {
+    const nav = document.getElementById("nav");
+    if (!nav) return;
+    if (!DB || !DATA) { nav.innerHTML = ""; return; }
+    const r = DB.moi ? DATA.coureurs[DB.moi.coureur] : null;
+    nav.innerHTML = `<a class="btn small" href="#/ajouter">+ Ajouter</a>
+      ${r ? `<span class="tag runner" title="Connecté : ${esc(r.nom)}" style="background:${esc(r.couleur)}">${esc(r.initiale)}</span>` : ""}
+      <button class="linkbtn" type="button" id="logout">Déconnexion</button>`;
+    nav.querySelector("#logout").onclick = () => DB.deconnexion();
+  }
+
+  function renderLogin(message) {
+    if (mapInstance) { mapInstance.remove(); mapInstance = null; }
+    app.innerHTML = `<form class="auth" id="login" novalidate>
+      <h1>Connexion</h1>
+      <p class="muted">Calendrier des courses d'Aurèle et Candice.</p>
+      <label><span>E-mail</span><input id="l-mail" type="email" autocomplete="username" required value="${esc(localGet("dernierMail") || "")}"></label>
+      <label><span>Mot de passe</span><input id="l-mdp" type="password" autocomplete="current-password" required></label>
+      <p class="f-err" id="l-err" role="alert" ${message ? "" : "hidden"}>${esc(message || "")}</p>
+      <div class="actions"><button class="btn" type="submit" id="l-go">Se connecter</button>
+      <button class="linkbtn" type="button" id="l-oubli">Mot de passe oublié ?</button></div>
+    </form>`;
+    const f = app.querySelector("#login"), err = f.querySelector("#l-err");
+    f.addEventListener("submit", async e => {
+      e.preventDefault();
+      const mail = f.querySelector("#l-mail").value, b = f.querySelector("#l-go");
+      b.disabled = true; err.hidden = true;
+      try { await DB.connexion(mail, f.querySelector("#l-mdp").value); localSet("dernierMail", mail.trim()); demarrer(); }
+      catch (ex) { err.textContent = ex.message; err.hidden = false; b.disabled = false; }
+    });
+    f.querySelector("#l-oubli").onclick = async () => {
+      const mail = f.querySelector("#l-mail").value.trim();
+      if (!mail) { err.textContent = "Saisis d'abord ton e-mail."; err.hidden = false; return; }
+      try { await DB.motDePasseOublie(mail); err.textContent = "E-mail envoyé : clique sur le lien reçu pour choisir un nouveau mot de passe."; }
+      catch (ex) { err.textContent = ex.message; }
+      err.hidden = false;
+    };
+  }
+
+  function renderNouveauMdp() {
+    app.innerHTML = `<form class="auth" id="newpw" novalidate>
+      <h1>Nouveau mot de passe</h1>
+      <label><span>Nouveau mot de passe (8 caractères minimum)</span><input id="n-mdp" type="password" autocomplete="new-password" minlength="8" required></label>
+      <p class="f-err" id="n-err" role="alert" hidden></p>
+      <div class="actions"><button class="btn" type="submit">Enregistrer</button></div>
+    </form>`;
+    const f = app.querySelector("#newpw"), err = f.querySelector("#n-err");
+    f.addEventListener("submit", async e => {
+      e.preventDefault();
+      const v = f.querySelector("#n-mdp").value;
+      if (v.length < 8) { err.textContent = "8 caractères minimum."; err.hidden = false; return; }
+      try { await DB.nouveauMotDePasse(v); history.replaceState(null, "", location.pathname); demarrer(); }
+      catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    });
+  }
 
   function route() {
     if (mapInstance) { mapInstance.remove(); mapInstance = null; }
     onResize = null;
+    if (DB && location.hash === "#/ajouter") return window.Formulaire.render(app, null, DATA, apresEnregistrement);
+    const mm = location.hash.match(/^#\/modifier\/(.+)$/);
+    if (DB && mm) {
+      const c = DATA.courses.find(x => x.id === decodeURIComponent(mm[1]));
+      if (c) return window.Formulaire.render(app, c, DATA, apresEnregistrement);
+    }
     const m = location.hash.match(/^#\/course\/(.+)$/);
     if (m) {
       const c = DATA.courses.find(x => x.id === decodeURIComponent(m[1]));
       if (c) return renderCourse(c);
     }
     renderListe();
+  }
+
+  async function apresEnregistrement(id) {
+    DATA = await DB.charger();
+    const h = "#/course/" + encodeURIComponent(id);
+    if (location.hash === h) route(); else location.hash = h;
   }
 
   /* ---------- Liste ---------- */
@@ -58,6 +154,7 @@
 
     let html = `<h1>Calendrier ${DATA.annee}</h1>
       <p class="muted">${courses.length} course${courses.length > 1 ? "s" : ""} au programme.</p>
+      ${DATA.horsLigne ? `<div class="notice">Hors ligne : affichage de la dernière version enregistrée sur ce téléphone.</div>` : ""}
       <div class="filters">${chips.join("")}</div>
       <section class="cal" id="cal" aria-label="Calendrier"></section>
       <h2 class="list-title">Toutes les courses</h2>`;
@@ -80,7 +177,9 @@
         </div>
       </a>`;
     }
-    if (!courses.length) html += `<p class="muted">Aucune course pour ce filtre.</p>`;
+    if (!courses.length) html += DB && !DATA.courses.length
+      ? `<div class="box vide"><p>Aucune course pour l'instant.</p><a class="btn" href="#/ajouter">+ Ajouter la première course</a></div>`
+      : `<p class="muted">Aucune course pour ce filtre.</p>`;
     app.innerHTML = html;
     app.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => { filtre = b.dataset.f; localSet("filtre", filtre); renderListe(); }));
     calendrier(courses);
@@ -200,7 +299,7 @@
         <div class="stat"><div class="v">${j > 0 ? "J-" + j : j === 0 ? "Jour J" : "Terminée"}</div><div class="l">${esc(c.statut || "")}</div></div>
       </div>
       <div class="actions">
-        ${c.gpx ? `<a class="btn" href="${esc(c.gpx)}" download>⬇ Télécharger le GPX</a>` : ""}
+        ${c.gpx ? (DB ? `<button class="btn" type="button" id="dl-gpx">⬇ Télécharger le GPX</button>` : `<a class="btn" href="${esc(c.gpx)}" download>⬇ Télécharger le GPX</a>`) : ""}
         ${liens}
       </div>`;
 
@@ -223,9 +322,48 @@
     if (logis) blocs.push(logis);
     if (c.notes) blocs.push(`<div class="box"><h2>Notes</h2><p>${esc(c.notes)}</p></div>`);
     if (blocs.length) html += `<div class="grid2">${blocs.join("")}</div>`;
+    if (DB) {
+      const nom = id => DATA.noms?.[id] || DATA.coureurs[id]?.nom || id || "?";
+      const quand = t => new Date(t).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) + " à " + new Date(t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      const m = c._meta || {};
+      html += `<div class="auteur">
+        <div>${m.cree_par ? `Ajoutée par <b>${esc(nom(m.cree_par))}</b> le ${esc(quand(m.cree_le))}` : ""}
+        ${m.modifie_le && m.modifie_le !== m.cree_le ? `<br>Modifiée par <b>${esc(nom(m.modifie_par))}</b> le ${esc(quand(m.modifie_le))}` : ""}</div>
+        <details id="histo"><summary>Historique des modifications</summary><ul class="histo"><li class="muted">Chargement…</li></ul></details>
+        <div class="actions">
+          <a class="btn ghost" href="#/modifier/${encodeURIComponent(c.id)}">Modifier</a>
+          <button class="btn ghost danger" type="button" id="suppr">Supprimer</button>
+        </div>
+        <div class="confirm" id="confirm" hidden>Supprimer définitivement « ${esc(c.nom)} » et son GPX ?
+          <button class="btn danger-plein" type="button" id="suppr-ok">Oui, supprimer</button>
+          <button class="btn ghost" type="button" id="suppr-non">Annuler</button>
+        </div>
+      </div>`;
+    }
 
     app.innerHTML = html;
     window.scrollTo(0, 0);
+
+    if (DB) {
+      const nom = id => DATA.noms?.[id] || DATA.coureurs[id]?.nom || id || "?";
+      const conf = app.querySelector("#confirm");
+      app.querySelector("#suppr").onclick = () => { conf.hidden = false; };
+      app.querySelector("#suppr-non").onclick = () => { conf.hidden = true; };
+      app.querySelector("#suppr-ok").onclick = async e => {
+        e.target.disabled = true;
+        try { await DB.supprimer(c); DATA = await DB.charger(); location.hash = "#/"; }
+        catch (ex) { conf.textContent = "Suppression impossible : " + ex.message; }
+      };
+      app.querySelector("#histo").addEventListener("toggle", async ev => {
+        if (!ev.target.open || ev.target.dataset.ok) return;
+        ev.target.dataset.ok = 1;
+        const ul = ev.target.querySelector("ul");
+        try {
+          const h = await DB.historique(c.id);
+          ul.innerHTML = h.map(x => `<li><b>${esc(nom(x.par))}</b> · ${esc(x.action)} · ${esc(new Date(x.le).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" }))}</li>`).join("") || `<li class="muted">Aucune modification.</li>`;
+        } catch (ex) { ul.innerHTML = `<li class="muted">Historique indisponible hors ligne.</li>`; }
+      });
+    }
 
     app.querySelectorAll("ul.check input").forEach(cb => {
       cb.checked = localGet("mat:" + cb.dataset.k) === "1";
@@ -233,7 +371,15 @@
     });
 
     if (c.gpx) {
-      fetch(c.gpx).then(r => r.text()).then(txt => {
+      (DB ? DB.gpx(c.gpx) : fetch(c.gpx).then(r => r.text())).then(txt => {
+        const dl = app.querySelector("#dl-gpx");
+        if (dl) dl.onclick = () => {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([txt], { type: "application/gpx+xml" }));
+          a.download = c.id + ".gpx"; document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        };
+        if (!document.getElementById("profile") || !location.hash.includes(encodeURIComponent(c.id))) return; // page quittée entre-temps
         const trace = parseGpx(txt);
         if (!trace.length) throw new Error("trace vide");
         const s = stats(trace);

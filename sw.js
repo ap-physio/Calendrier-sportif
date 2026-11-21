@@ -1,6 +1,6 @@
 /* Cache hors-ligne simple : le site s'ouvre et les fiches/GPX déjà consultés restent lisibles sans réseau. */
-const CACHE = "courses-v1";
-const BASE = ["./", "index.html", "assets/app.css", "assets/app.js", "assets/leaflet/leaflet.css", "assets/leaflet/leaflet.js", "data/courses.json", "manifest.webmanifest", "icons/apple-touch-icon.png"];
+const CACHE = "courses-v2";
+const BASE = ["./", "index.html", "assets/app.css", "assets/app.js", "assets/form.js", "assets/db.js", "assets/config.js", "assets/supabase/supabase.js", "assets/leaflet/leaflet.css", "assets/leaflet/leaflet.js", "manifest.webmanifest", "icons/apple-touch-icon.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(BASE))); self.skipWaiting(); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener("fetch", e => {
