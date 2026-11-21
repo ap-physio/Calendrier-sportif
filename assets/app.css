@@ -278,3 +278,4 @@ ul.check input { accent-color: var(--accent); width: 18px; height: 18px; }
 .tag.insc { padding: 0 8px; font-weight: 700; }
 .tag.insc.oui { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
 .tag.insc.non { background: var(--chip-bg); color: var(--muted); border: 1px dashed var(--line); }
+.go-depart { margin-bottom: 18px; } .go-depart h2 { margin-bottom: 4px; } .go-depart .actions { margin: 10px 0 0; }

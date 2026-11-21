@@ -408,6 +408,19 @@
         ${liens}
       </div>`;
 
+    // Rejoindre le départ (courses où l'on est inscrit) : Google Maps ou Waze
+    const destTexte = c.depart || [c.lieu, c.pays].filter(Boolean).join(", ");
+    if (c.statut === "inscrit" && (destTexte || c.gpx)) {
+      html += `<div class="box go-depart">
+        <h2>🚗 Rejoindre le départ</h2>
+        <p class="muted" id="go-dest">${destTexte ? esc(destTexte) : "Départ de la trace GPX"}</p>
+        <div class="actions">
+          <a class="btn" id="go-gmaps" target="_blank" rel="noopener" href="${destTexte ? lienGmaps(destTexte) : "#"}">Google Maps</a>
+          <a class="btn ghost" id="go-waze" target="_blank" rel="noopener" href="${destTexte ? lienWaze(destTexte) : "#"}">Waze</a>
+        </div>
+      </div>`;
+    }
+
     if (c.gpx) {
       html += `<div class="mapcard">
         <div id="map"></div>
@@ -493,6 +506,13 @@
         if (!document.getElementById("profile") || !location.hash.includes(encodeURIComponent(c.id))) return; // page quittée entre-temps
         const trace = parseGpx(txt);
         if (!trace.length) throw new Error("trace vide");
+        // Sans adresse de départ saisie, on vise le premier point de la trace (plus précis que la ville)
+        if (!c.depart && app.querySelector("#go-gmaps")) {
+          const p0 = trace[0], ll = `${p0.lat.toFixed(6)},${p0.lon.toFixed(6)}`;
+          app.querySelector("#go-gmaps").href = lienGmaps(ll);
+          app.querySelector("#go-waze").href = `https://waze.com/ul?ll=${ll}&navigate=yes`;
+          app.querySelector("#go-dest").textContent = "Départ de la trace GPX" + (destTexte ? ` (${destTexte})` : "");
+        }
         const s = stats(trace);
         // Le GPX fait foi pour la distance et le D+
         document.getElementById("st-dist").textContent = fmtKm(s.dist);
@@ -532,6 +552,9 @@
 
   /* ---------- GPX ---------- */
   window.GPX = { parse: t => parseGpx(t), stats: t => stats(t) };
+  function lienGmaps(dest) { return "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(dest); }
+  function lienWaze(dest) { return "https://waze.com/ul?q=" + encodeURIComponent(dest) + "&navigate=yes"; }
+
   function parseGpx(txt) {
     const xml = new DOMParser().parseFromString(txt, "application/xml");
     let nodes = [...xml.getElementsByTagName("trkpt")];

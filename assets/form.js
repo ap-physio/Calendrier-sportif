@@ -65,6 +65,7 @@
           <label><span>Statut</span><select id="f-statut">${["envisagé", "inscrit"].map(s => `<option ${s === c.statut ? "selected" : ""}>${s}</option>`).join("")}</select></label>
           <label><span>Lieu</span><input id="f-lieu" value="${esc(c.lieu)}"></label>
           <label><span>Pays</span><input id="f-pays" value="${esc(c.pays)}"></label>
+          <label class="f-full"><span>Adresse du départ (pour Google Maps / Waze)</span><input id="f-depart" value="${esc(c.depart)}" placeholder="ex. Château de Ripaille, Thonon-les-Bains"></label>
           <label><span>Distance (km)</span><input id="f-dist" type="number" step="any" inputmode="decimal" value="${esc(c.distance_km)}" placeholder="calculée depuis le GPX"></label>
           <label><span>Dénivelé + (m)</span><input id="f-dp" type="number" step="any" inputmode="numeric" value="${esc(c.denivele_pos)}" placeholder="calculé depuis le GPX"></label>
           <label class="f-full"><span>Trace GPX ${c.gpx ? "(un GPX est déjà enregistré : en choisir un autre le remplace)" : ""}</span><input id="f-gpx" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml"></label>
@@ -141,7 +142,7 @@
       const d = {
         nom: val("#f-nom"), date: val("#f-date"), heure_depart: val("#f-heure") || undefined,
         coureurs: qui, sport: val("#f-sport") || undefined, statut: val("#f-statut"),
-        lieu: val("#f-lieu") || undefined, pays: val("#f-pays") || undefined,
+        lieu: val("#f-lieu") || undefined, pays: val("#f-pays") || undefined, depart: val("#f-depart") || undefined,
         distance_km: num("#f-dist"), denivele_pos: num("#f-dp"),
         gpx: c.gpx || undefined,
         documents: c.documents || undefined,
@@ -229,6 +230,7 @@
       };
       met("#f-nom", c.nom, "nom"); met("#f-date", c.date, "date"); met("#f-heure", c.heure_depart, "heure");
       met("#f-sport", c.sport, "sport"); met("#f-lieu", c.lieu, "lieu"); met("#f-pays", c.pays, "pays");
+      met("#f-depart", c.depart_adresse, "adresse du départ");
       met("#f-dist", c.distance_km, "distance"); met("#f-dp", c.denivele_pos, "D+");
       met("#f-acces", c.acces, "accès"); met("#f-dossard", c.retrait_dossard, "dossards");
       met("#f-mat", (c.materiel || []).join("\n"), "matériel"); met("#f-notes", c.notes, "notes");

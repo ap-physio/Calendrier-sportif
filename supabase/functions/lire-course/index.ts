@@ -19,13 +19,14 @@ const nullable = (type: string) => ({ type: [type, "null"] });
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["nom", "date", "heure_depart", "lieu", "pays", "sport", "distance_km", "denivele_pos", "acces",
+  required: ["nom", "date", "heure_depart", "depart_adresse", "lieu", "pays", "sport", "distance_km", "denivele_pos", "acces",
     "retrait_dossard", "materiel", "ravitos", "barrieres", "liens", "gpx_url", "notes", "epreuve_choisie", "autres_epreuves"],
   properties: {
     nom: nullable("string"),
     date: { ...nullable("string"), description: "AAAA-MM-JJ" },
     heure_depart: { ...nullable("string"), description: "Heure de départ de l'épreuve retenue, HH:MM sur 24 h" },
     lieu: nullable("string"),
+    depart_adresse: { ...nullable("string"), description: "Lieu précis du départ de l'épreuve retenue, utilisable dans un GPS (ex. « Château de Ripaille, Thonon-les-Bains »)" },
     pays: nullable("string"),
     sport: { ...nullable("string"), description: "Trail, Course sur route, Triathlon, XTri, Swimrun, Cyclisme, VTT, Ski de rando…" },
     distance_km: nullable("number"),
