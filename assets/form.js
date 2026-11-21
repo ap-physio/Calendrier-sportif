@@ -56,6 +56,7 @@
           <label><span>Distance (km)</span><input id="f-dist" type="number" step="any" inputmode="decimal" value="${esc(c.distance_km)}" placeholder="calculée depuis le GPX"></label>
           <label><span>Dénivelé + (m)</span><input id="f-dp" type="number" step="any" inputmode="numeric" value="${esc(c.denivele_pos)}" placeholder="calculé depuis le GPX"></label>
           <label class="f-full"><span>Trace GPX ${c.gpx ? "(un GPX est déjà enregistré : en choisir un autre le remplace)" : ""}</span><input id="f-gpx" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml"></label>
+          <p class="f-full gpx-note" id="f-gpx-note" hidden></p>
         </fieldset>
         <fieldset><legend>Infos pratiques</legend>
           <label class="f-full"><span>Accès</span><textarea id="f-acces" rows="2">${esc(c.acces)}</textarea></label>
@@ -81,6 +82,9 @@
     const form = app.querySelector("#fcourse");
     app.querySelector("#a-go").onclick = () => remplirAuto(form);
     // Les dates des trajets / logement s'ouvrent sur la date de la course plutôt que sur aujourd'hui
+    // Distance et D+ calculés depuis le GPX dès qu'un fichier est choisi (prioritaires sur la page)
+    form.querySelector("#f-gpx").addEventListener("change", e => { const f = e.target.files[0]; if (f) f.text().then(t => depuisGpx(form, t)); });
+
     const caleSurCourse = e => {
       const el = e.target;
       if (!el.matches || !el.matches('.f-row input[type="date"]') || el.value) return;
@@ -161,6 +165,21 @@
     return String(h).padStart(2, "0") + ":" + (m[2] || "00");
   }
 
+  function depuisGpx(form, texte) {
+    const note = form.querySelector("#f-gpx-note");
+    try {
+      const t = window.GPX.parse(texte);
+      if (t.length < 2) throw new Error("trace vide");
+      const s = window.GPX.stats(t);
+      form.querySelector("#f-dist").value = Math.round(s.dist * 10) / 10;
+      if (s.hasEle) form.querySelector("#f-dp").value = Math.round(s.dplus);
+      note.textContent = `Calculé depuis le GPX : ${String(Math.round(s.dist * 10) / 10).replace(".", ",")} km${s.hasEle ? ` et ${Math.round(s.dplus)} m D+` : " (pas d'altitude dans ce GPX)"}.`;
+      note.hidden = false;
+    } catch (e) {
+      note.textContent = "Ce fichier GPX n'a pas pu être lu."; note.hidden = false;
+    }
+  }
+
   async function remplirAuto(form) {
     const msg = form.querySelector("#a-msg"), go = form.querySelector("#a-go");
     const url = form.querySelector("#a-url").value.trim();
@@ -198,6 +217,7 @@
             const dt = new DataTransfer();
             dt.items.add(new File([r.gpx], r.gpx_nom || "trace.gpx", { type: "application/gpx+xml" }));
             input.files = dt.files; remplis.push("GPX");
+            depuisGpx(form, r.gpx);
           } catch (e) {}
         }
       }

@@ -480,8 +480,9 @@
         const trace = parseGpx(txt);
         if (!trace.length) throw new Error("trace vide");
         const s = stats(trace);
-        if (!c.distance_km) document.getElementById("st-dist").textContent = fmtKm(s.dist);
-        if (!c.denivele_pos) document.getElementById("st-dp").textContent = fmtM(s.dplus);
+        // Le GPX fait foi pour la distance et le D+
+        document.getElementById("st-dist").textContent = fmtKm(s.dist);
+        if (s.hasEle) document.getElementById("st-dp").textContent = fmtM(s.dplus);
         document.getElementById("st-alt").textContent = s.hasEle ? fmtM(s.max) : "–";
         carteEtProfil(c, trace, s);
       }).catch(e => {
@@ -516,6 +517,7 @@
   }
 
   /* ---------- GPX ---------- */
+  window.GPX = { parse: t => parseGpx(t), stats: t => stats(t) };
   function parseGpx(txt) {
     const xml = new DOMParser().parseFromString(txt, "application/xml");
     let nodes = [...xml.getElementsByTagName("trkpt")];

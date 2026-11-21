@@ -266,3 +266,4 @@ ul.check input { accent-color: var(--accent); width: 18px; height: 18px; }
 .auto-go { display: flex; align-items: end; }
 .auto-msg { margin: 0; font-size: 14px; padding: 10px 12px; border-radius: 10px; background: var(--card); color: var(--ink); }
 .auto-msg.ko { color: #c92a2a; }
+.gpx-note { margin: 0; font-size: 13px; color: var(--ok); }
