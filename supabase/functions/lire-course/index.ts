@@ -16,34 +16,36 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
 const nullable = (type: string) => ({ type: [type, "null"] });
+// Champs texte : chaîne vide si l'info est absente (l'API limite le nombre de champs « null possible »)
+const texte = { type: "string" };
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["nom", "date", "heure_depart", "depart_adresse", "ouverture_inscriptions", "lieu", "pays", "sport", "distance_km", "denivele_pos", "acces",
     "retrait_dossard", "materiel", "ravitos", "barrieres", "liens", "gpx_url", "notes", "epreuve_choisie", "autres_epreuves"],
   properties: {
-    nom: nullable("string"),
-    date: { ...nullable("string"), description: "AAAA-MM-JJ" },
-    heure_depart: { ...nullable("string"), description: "Heure de départ de l'épreuve retenue, HH:MM sur 24 h" },
-    lieu: nullable("string"),
-    ouverture_inscriptions: { ...nullable("string"), description: "Date d'ouverture des inscriptions AAAA-MM-JJ si la page l'annonce (ex. « ouverture des inscriptions le 11 décembre 2026 »)" },
-    depart_adresse: { ...nullable("string"), description: "Lieu précis du départ de l'épreuve retenue, utilisable dans un GPS (ex. « Château de Ripaille, Thonon-les-Bains »)" },
-    pays: nullable("string"),
-    sport: { ...nullable("string"), description: "Trail, Course sur route, Triathlon, XTri, Swimrun, Cyclisme, VTT, Ski de rando…" },
+    nom: texte,
+    date: { ...texte, description: "AAAA-MM-JJ" },
+    heure_depart: { ...texte, description: "Heure de départ de l'épreuve retenue, HH:MM sur 24 h" },
+    lieu: texte,
+    ouverture_inscriptions: { ...texte, description: "Date d'ouverture des inscriptions AAAA-MM-JJ si la page l'annonce (ex. « ouverture des inscriptions le 11 décembre 2026 »)" },
+    depart_adresse: { ...texte, description: "Lieu précis du départ de l'épreuve retenue, utilisable dans un GPS (ex. « Château de Ripaille, Thonon-les-Bains »)" },
+    pays: texte,
+    sport: { ...texte, description: "Trail, Course sur route, Triathlon, XTri, Swimrun, Cyclisme, VTT, Ski de rando…" },
     distance_km: nullable("number"),
     denivele_pos: nullable("number"),
-    acces: nullable("string"),
-    retrait_dossard: nullable("string"),
+    acces: texte,
+    retrait_dossard: texte,
     materiel: { type: "array", items: { type: "string" } },
     ravitos: { type: "array", items: { type: "object", additionalProperties: false, required: ["km", "nom", "type"],
-      properties: { km: nullable("number"), nom: { type: "string" }, type: nullable("string") } } },
+      properties: { km: nullable("number"), nom: { type: "string" }, type: texte } } },
     barrieres: { type: "array", items: { type: "object", additionalProperties: false, required: ["km", "lieu", "heure"],
       properties: { km: nullable("number"), lieu: { type: "string" }, heure: { type: "string", description: "HH:MM" } } } },
     liens: { type: "array", items: { type: "object", additionalProperties: false, required: ["titre", "url"],
       properties: { titre: { type: "string" }, url: { type: "string" } } } },
-    gpx_url: { ...nullable("string"), description: "URL absolue d'un fichier .gpx de l'épreuve choisie, si la page en donne un" },
-    notes: nullable("string"),
-    epreuve_choisie: nullable("string"),
+    gpx_url: { ...texte, description: "URL absolue d'un fichier .gpx de l'épreuve choisie, si la page en donne un" },
+    notes: texte,
+    epreuve_choisie: texte,
     autres_epreuves: { type: "array", items: { type: "string" } },
   },
 };
@@ -51,7 +53,7 @@ const SCHEMA = {
 const SYSTEME = `Tu remplis la fiche d'une course (trail, course sur route, triathlon…) à partir du texte d'une page web.
 Règles :
 - Remplis le plus de champs possible : le texte contient la page principale et des pages annexes du même site (programme, horaires, règlement, parcours…). Cherche chaque information dans toutes ces pages.
-- N'invente rien : un champ absent des pages vaut null (ou une liste vide). Seules exceptions : le pays et le sport peuvent se déduire du lieu et du type d'épreuve.
+- N'invente rien : un champ texte absent des pages vaut "" (chaîne vide), un nombre absent vaut null, une liste absente est vide. Seules exceptions : le pays et le sport peuvent se déduire du lieu et du type d'épreuve.
 - Ravitaillements et barrières horaires : donne-les tous, avec leur kilomètre s'il est indiqué. Matériel obligatoire : liste complète, un élément par ligne.
 - Liens : site officiel, inscription, règlement, page parcours / trace, résultats… s'ils existent.
 - Si la page présente plusieurs épreuves (distances), remplis la fiche pour l'épreuve demandée par l'utilisateur ; s'il n'en demande pas, prends l'épreuve principale (la plus longue). Indique son nom dans epreuve_choisie et liste les autres dans autres_epreuves.
@@ -293,6 +295,8 @@ Deno.serve(async (req) => {
   let course;
   try {
     course = JSON.parse(bloc && "text" in bloc ? bloc.text : "");
+    // "" (info absente) → null, comme le site l'attend
+    for (const k of Object.keys(course)) if (course[k] === "") course[k] = null;
   } catch {
     return json({ erreur: "Réponse de l'IA illisible, réessaie." }, 502);
   }
