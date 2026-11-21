@@ -50,7 +50,11 @@
           annee: C.annee,
           coureurs: C.coureurs,
           noms,
-          courses: (c.data || []).map(r => Object.assign({}, r.data, {
+          annee_docs: (() => {
+            const r = (c.data || []).find(r => r.id === "_annee-" + C.annee);
+            return r ? Object.assign({}, r.data, { id: r.id, _existe: true }) : { id: "_annee-" + C.annee, documents: [] };
+          })(),
+          courses: (c.data || []).filter(r => !r.id.startsWith("_")).map(r => Object.assign({}, r.data, {
             id: r.id,
             _meta: { cree_par: r.cree_par, cree_le: r.cree_le, modifie_par: r.modifie_par, modifie_le: r.modifie_le }
           }))
@@ -100,14 +104,16 @@
     },
 
     // Documents joints (assurance, billets…) : fichier dans le stockage privé + liste dans la fiche
-    async ajouterDocument(c, fichier) {
+    async ajouterDocument(c, fichier, extra) {
       const propre = fichier.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]+/g, "-").slice(-80);
       const chemin = `${c.id}/${Date.now()}-${propre}`;
       const up = await sb.storage.from("documents").upload(chemin, fichier, { contentType: fichier.type || "application/octet-stream" });
       if (up.error) throw new Error("Envoi impossible : " + up.error.message);
       const data = DB.donnees(c);
-      data.documents = (data.documents || []).concat([{ nom: fichier.name, chemin, type: fichier.type || "", taille: fichier.size, par: DB.moi?.coureur, le: new Date().toISOString() }]);
-      const { error } = await sb.from("courses").update({ data }).eq("id", c.id);
+      data.documents = (data.documents || []).concat([Object.assign({ nom: fichier.name, chemin, type: fichier.type || "", taille: fichier.size, par: DB.moi?.coureur, le: new Date().toISOString() }, extra || {})]);
+      const { error } = c.id.startsWith("_") && !c._existe
+        ? await sb.from("courses").upsert({ id: c.id, data })
+        : await sb.from("courses").update({ data }).eq("id", c.id);
       if (error) { await sb.storage.from("documents").remove([chemin]); throw new Error(error.message); }
     },
     async supprimerDocument(c, chemin) {
@@ -122,7 +128,7 @@
       if (error) throw new Error(error.message);
       return data.signedUrl;
     },
-    donnees(c) { const d = Object.assign({}, c); delete d.id; delete d._meta; return d; },
+    donnees(c) { const d = Object.assign({}, c); delete d.id; delete d._meta; delete d._existe; return d; },
 
     async historique(id) {
       const { data, error } = await sb.from("historique").select("action, par, le").eq("course_id", id).order("le", { ascending: false }).limit(30);

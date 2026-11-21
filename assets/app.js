@@ -60,7 +60,7 @@
     if (!nav) return;
     if (!DB || !DATA) { nav.innerHTML = ""; return; }
     const r = DB.moi ? DATA.coureurs[DB.moi.coureur] : null;
-    nav.innerHTML = `<a class="btn small" href="#/ajouter">+ Ajouter</a>
+    nav.innerHTML = `<a class="navlink" href="#/documents">Documents</a><a class="btn small" href="#/ajouter">+ Ajouter</a>
       ${r ? `<span class="tag runner" title="Connecté : ${esc(r.nom)}" style="background:${esc(r.couleur)}">${esc(r.initiale)}</span>` : ""}
       <button class="linkbtn" type="button" id="logout">Déconnexion</button>`;
     nav.querySelector("#logout").onclick = () => DB.deconnexion();
@@ -114,6 +114,7 @@
   function route() {
     if (mapInstance) { mapInstance.remove(); mapInstance = null; }
     onResize = null;
+    if (DB && location.hash === "#/documents") return renderDocsAnnee();
     if (DB && location.hash === "#/ajouter") return window.Formulaire.render(app, null, DATA, apresEnregistrement);
     const mm = location.hash.match(/^#\/modifier\/(.+)$/);
     if (DB && mm) {
@@ -281,6 +282,91 @@
     requestAnimationFrame(() => pop.classList.add("in"));
   }
 
+  /* ---------- Documents (par course, ou de l'année) ---------- */
+  function monterDocs(zone, holder, annee, recharger) {
+    const nomDe = id => DATA.noms?.[id] || DATA.coureurs[id]?.nom || id;
+    const taille = n => n > 1048576 ? (n / 1048576).toFixed(1).replace(".", ",") + " Mo" : Math.max(1, Math.round(n / 1024)) + " Ko";
+    const icone = t => /pdf/.test(t) ? "PDF" : /^image\//.test(t) ? "IMG" : "DOC";
+    const docs = holder.documents || [];
+    const auj = new Date(); auj.setHours(0, 0, 0, 0);
+    const item = (d, i) => {
+      let exp = "";
+      if (d.expire) {
+        const j = Math.round((parseDate(d.expire) - auj) / 86400000);
+        exp = j < 0 ? ` · <span class="exp ko">expiré le ${esc(fmtCourt(d.expire))}</span>` : ` · <span class="exp ${j < 45 ? "bientot" : ""}">valable jusqu'au ${esc(fmtCourt(d.expire))}</span>`;
+      }
+      return `<li>
+        <span class="docicon">${icone(d.type)}</span>
+        <div class="docinfo"><button class="linkbtn docopen" type="button" data-i="${i}">${esc(d.nom)}</button>
+          <div class="muted">${taille(d.taille || 0)}${d.par ? " · ajouté par " + esc(nomDe(d.par)) : ""}${exp}</div></div>
+        <button class="f-del docdel" type="button" data-i="${i}" aria-label="Retirer ${esc(d.nom)}">×</button>
+        <div class="confirm docconf" data-i="${i}" hidden>Retirer ce document ?
+          <button class="btn danger-plein docok" type="button" data-i="${i}">Oui, retirer</button>
+          <button class="btn ghost docnon" type="button" data-i="${i}">Annuler</button></div>
+      </li>`;
+    };
+    let liste = "";
+    if (annee) {
+      const groupes = Object.keys(DATA.coureurs).concat(["commun"]);
+      liste = groupes.map(g => {
+        const its = docs.map((d, i) => [d, i]).filter(([d]) => (d.pour || "commun") === g);
+        const r = DATA.coureurs[g];
+        return `<div class="docgroup"><h3>${r ? `<span class="tag runner" style="background:${esc(r.couleur)}">${esc(r.initiale)}</span> ${esc(r.nom)}` : "Commun"}</h3>
+          ${its.length ? `<ul class="doclist">${its.map(([d, i]) => item(d, i)).join("")}</ul>` : `<p class="muted">Aucun document.</p>`}</div>`;
+      }).join("");
+    } else {
+      liste = docs.length ? `<ul class="doclist">${docs.map(item).join("")}</ul>` : `<p class="muted">Billets, assurance annulation, réservations, règlement… (PDF, photos, tout type de fichier)</p>`;
+    }
+    const ajout = annee ? `<div class="docform">
+        <label><span>Pour</span><select id="doc-pour">${Object.entries(DATA.coureurs).map(([id, r]) => `<option value="${esc(id)}" ${DB.moi?.coureur === id ? "selected" : ""}>${esc(r.nom)}</option>`).join("")}<option value="commun">Commun</option></select></label>
+        <label><span>Valable jusqu'au (facultatif)</span><input type="date" id="doc-exp"></label>
+      </div>` : "";
+    zone.innerHTML = `${annee ? "" : "<h2>Documents</h2>"}${liste}${ajout}
+      <label class="btn ghost docadd"><input type="file" id="doc-file" multiple hidden>+ Joindre un document</label>
+      <p class="f-err" id="doc-err" role="alert" hidden></p>`;
+
+    const derr = zone.querySelector("#doc-err");
+    zone.querySelector("#doc-file").addEventListener("change", async e => {
+      const fichiers = [...e.target.files];
+      if (!fichiers.length) return;
+      const lab = zone.querySelector(".docadd");
+      lab.classList.add("busy"); lab.lastChild.textContent = "Envoi en cours…";
+      const extra = annee ? { pour: zone.querySelector("#doc-pour").value, expire: zone.querySelector("#doc-exp").value || undefined } : undefined;
+      try {
+        let cur = holder;
+        for (const f of fichiers) {
+          if (f.size > 50 * 1048576) throw new Error(`« ${f.name} » dépasse 50 Mo.`);
+          await DB.ajouterDocument(cur, f, extra);
+          DATA = await DB.charger();
+          cur = annee ? DATA.annee_docs : (DATA.courses.find(x => x.id === holder.id) || cur);
+        }
+        await recharger();
+      } catch (ex) { derr.textContent = ex.message; derr.hidden = false; lab.classList.remove("busy"); lab.lastChild.textContent = "+ Joindre un document"; }
+    });
+    zone.querySelectorAll(".docopen").forEach(b => b.onclick = async () => {
+      const d = docs[b.dataset.i];
+      try { location.href = await DB.lienDocument(d.chemin, d.nom); }
+      catch (ex) { derr.textContent = "Ouverture impossible : " + ex.message; derr.hidden = false; }
+    });
+    zone.querySelectorAll(".docdel").forEach(b => b.onclick = () => { zone.querySelector(`.docconf[data-i="${b.dataset.i}"]`).hidden = false; });
+    zone.querySelectorAll(".docnon").forEach(b => b.onclick = () => { b.parentElement.hidden = true; });
+    zone.querySelectorAll(".docok").forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      try { await DB.supprimerDocument(holder, docs[b.dataset.i].chemin); await recharger(); }
+      catch (ex) { derr.textContent = ex.message; derr.hidden = false; }
+    });
+  }
+
+  function renderDocsAnnee() {
+    document.title = "Documents · Courses " + DATA.annee;
+    app.innerHTML = `<a class="back" href="#/">← Calendrier</a>
+      <h1>Documents de l'année</h1>
+      <p class="muted">Licences, certificats médicaux, assurances… valables pour toute la saison.</p>
+      <div class="box docs" id="docs-zone"></div>`;
+    window.scrollTo(0, 0);
+    monterDocs(app.querySelector("#docs-zone"), DATA.annee_docs, true, async () => { DATA = await DB.charger(); renderDocsAnnee(); });
+  }
+
   /* ---------- Fiche course ---------- */
   function renderCourse(c) {
     document.title = c.nom + " · Courses " + DATA.annee;
@@ -292,6 +378,8 @@
       <h1>${esc(c.nom)}</h1>
       <div class="muted head-meta">${tags(c)} ${esc(noms)} · ${esc(fmtDate(c.date))}${c.heure_depart ? " · départ " + esc(c.heure_depart) : ""}</div>
       ${c.exemple ? `<div class="notice">${esc(c.exemple)}</div>` : ""}
+      ${DB ? (DATA.annee_docs?.documents || []).filter(d => d.expire && d.expire < c.date && (c.coureurs || []).concat("commun").includes(d.pour || "commun"))
+        .map(d => `<div class="notice">« ${esc(d.nom)} » expire le ${esc(fmtCourt(d.expire))}, avant cette course. <a href="#/documents">Voir les documents</a></div>`).join("") : ""}
       <div class="stats">
         <div class="stat"><div class="v" id="st-dist">${c.distance_km ? fmtKm(c.distance_km) : "–"}</div><div class="l">Distance</div></div>
         <div class="stat"><div class="v" id="st-dp">${c.denivele_pos ? fmtM(c.denivele_pos) : "–"}</div><div class="l">Dénivelé +</div></div>
@@ -322,22 +410,7 @@
     if (logis) blocs.push(logis);
     if (c.notes) blocs.push(`<div class="box"><h2>Notes</h2><p>${esc(c.notes)}</p></div>`);
     if (DB) {
-      const docs = c.documents || [];
-      const taille = n => n > 1048576 ? (n / 1048576).toFixed(1).replace(".", ",") + " Mo" : Math.max(1, Math.round(n / 1024)) + " Ko";
-      const icone = t => /pdf/.test(t) ? "PDF" : /^image\//.test(t) ? "IMG" : "DOC";
-      blocs.push(`<div class="box docs"><h2>Documents</h2>
-        ${docs.length ? `<ul class="doclist">${docs.map((d, i) => `<li>
-          <span class="docicon">${icone(d.type)}</span>
-          <div class="docinfo"><button class="linkbtn docopen" type="button" data-i="${i}">${esc(d.nom)}</button>
-            <div class="muted">${taille(d.taille || 0)}${d.par ? " · ajouté par " + esc(DATA.noms?.[d.par] || DATA.coureurs[d.par]?.nom || d.par) : ""}</div></div>
-          <button class="f-del docdel" type="button" data-i="${i}" aria-label="Retirer ${esc(d.nom)}">×</button>
-          <div class="confirm docconf" data-i="${i}" hidden>Retirer ce document ?
-            <button class="btn danger-plein docok" type="button" data-i="${i}">Oui, retirer</button>
-            <button class="btn ghost docnon" type="button" data-i="${i}">Annuler</button></div>
-        </li>`).join("")}</ul>` : `<p class="muted">Billets, assurance annulation, réservations, règlement… (PDF, photos, tout type de fichier)</p>`}
-        <label class="btn ghost docadd"><input type="file" id="doc-file" multiple hidden>+ Joindre un document</label>
-        <p class="f-err" id="doc-err" role="alert" hidden></p>
-      </div>`);
+      blocs.push(`<div class="box docs" id="docs-zone"></div>`);
     }
     if (blocs.length) html += `<div class="grid2">${blocs.join("")}</div>`;
     if (DB) {
@@ -372,34 +445,8 @@
         try { await DB.supprimer(c); DATA = await DB.charger(); location.hash = "#/"; }
         catch (ex) { conf.textContent = "Suppression impossible : " + ex.message; }
       };
-      const derr = app.querySelector("#doc-err");
-      const recharger = async () => { DATA = await DB.charger(); const n = DATA.courses.find(x => x.id === c.id); if (n) renderCourse(n); };
-      app.querySelector("#doc-file").addEventListener("change", async e => {
-        const fichiers = [...e.target.files];
-        if (!fichiers.length) return;
-        const lab = app.querySelector(".docadd");
-        lab.classList.add("busy"); lab.lastChild.textContent = "Envoi en cours…";
-        try {
-          let cur = c;
-          for (const f of fichiers) {
-            if (f.size > 50 * 1048576) throw new Error(`« ${f.name} » dépasse 50 Mo.`);
-            await DB.ajouterDocument(cur, f);
-            DATA = await DB.charger(); cur = DATA.courses.find(x => x.id === c.id) || cur;
-          }
-          renderCourse(cur);
-        } catch (ex) { derr.textContent = ex.message; derr.hidden = false; lab.classList.remove("busy"); lab.lastChild.textContent = "+ Joindre un document"; }
-      });
-      app.querySelectorAll(".docopen").forEach(b => b.onclick = async () => {
-        const d = c.documents[b.dataset.i];
-        try { location.href = await DB.lienDocument(d.chemin, d.nom); }
-        catch (ex) { derr.textContent = "Ouverture impossible : " + ex.message; derr.hidden = false; }
-      });
-      app.querySelectorAll(".docdel").forEach(b => b.onclick = () => { app.querySelector(`.docconf[data-i="${b.dataset.i}"]`).hidden = false; });
-      app.querySelectorAll(".docnon").forEach(b => b.onclick = () => { b.parentElement.hidden = true; });
-      app.querySelectorAll(".docok").forEach(b => b.onclick = async () => {
-        b.disabled = true;
-        try { await DB.supprimerDocument(c, c.documents[b.dataset.i].chemin); await recharger(); }
-        catch (ex) { derr.textContent = ex.message; derr.hidden = false; }
+      monterDocs(app.querySelector("#docs-zone"), c, false, async () => {
+        DATA = await DB.charger(); const n = DATA.courses.find(x => x.id === c.id); if (n) renderCourse(n);
       });
       app.querySelector("#histo").addEventListener("toggle", async ev => {
         if (!ev.target.open || ev.target.dataset.ok) return;

@@ -238,3 +238,18 @@ ul.check input { accent-color: var(--accent); width: 18px; height: 18px; }
 .docadd { cursor: pointer; }
 .docadd.busy { opacity: .6; pointer-events: none; }
 [hidden] { display: none !important; }
+
+/* Documents de l'année */
+.navlink { font-size: 14px; font-weight: 600; text-decoration: none; padding: 6px 4px; }
+.navlink:hover { text-decoration: underline; }
+.docgroup { width: 100%; display: grid; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.docgroup h3 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.docform { display: flex; gap: 12px; flex-wrap: wrap; width: 100%; }
+.docform label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.docform select, .docform input { font: inherit; font-size: 16px; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.exp.bientot { color: #b35c00; font-weight: 600; }
+.exp.ko { color: #c92a2a; font-weight: 600; }
+@media (max-width: 480px) {
+  .brand span { display: none; }
+  .nav { gap: 8px; }
+}
