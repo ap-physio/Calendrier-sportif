@@ -78,9 +78,26 @@ function htmlEnTexte(html: string, base: string) {
   return { texte, liens: [...new Set(liens)].slice(0, 400), bruts };
 }
 
-async function telecharger(url: string, maxOctets: number) {
+// En-têtes d'un vrai navigateur (Chrome sur Mac) : beaucoup de sites refusent les robots (erreur 403)
+const NAVIGATEUR = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+  "Cache-Control": "no-cache",
+  "Pragma": "no-cache",
+  "Upgrade-Insecure-Requests": "1",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Sec-CH-UA": '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
+  "Sec-CH-UA-Mobile": "?0",
+  "Sec-CH-UA-Platform": '"macOS"',
+};
+
+async function telecharger(url: string, maxOctets: number, referer?: string) {
   const r = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; calendrier-courses)", "Accept-Language": "fr,en;q=0.8" },
+    headers: referer ? { ...NAVIGATEUR, "Referer": referer, "Sec-Fetch-Site": "same-origin" } : NAVIGATEUR,
     redirect: "follow",
     signal: AbortSignal.timeout(20_000),
   });
@@ -88,6 +105,50 @@ async function telecharger(url: string, maxOctets: number) {
   const buf = new Uint8Array(await r.arrayBuffer());
   if (buf.byteLength > maxOctets) throw new Error("fichier trop gros");
   return { texte: new TextDecoder().decode(buf), url: r.url, type: r.headers.get("content-type") || "" };
+}
+
+// Secours n°1 : un lecteur en ligne (r.jina.ai) qui ouvre la page dans un vrai navigateur,
+// exécute le JavaScript et renvoie le texte avec les liens.
+async function viaLecteur(url: string) {
+  const r = await fetch("https://r.jina.ai/" + url, {
+    headers: { "Accept": "text/plain", "X-Return-Format": "markdown", "X-Timeout": "25", "X-With-Links-Summary": "true" },
+    signal: AbortSignal.timeout(40_000),
+  });
+  if (!r.ok) throw new Error(`lecteur ${r.status}`);
+  const md = await r.text();
+  const liens: string[] = [];
+  for (const m of md.matchAll(/\[([^\]]{0,120})\]\((https?:[^)\s]+)\)/g)) liens.push(`${m[1].trim() || "(lien)"} -> ${m[2]}`);
+  return { texte: md.slice(0, MAX_TEXTE), liens: [...new Set(liens)].slice(0, 400) };
+}
+
+// Secours n°2 : Claude va lire la page lui-même (outil web_fetch d'Anthropic)
+async function viaClaude(client: Anthropic, url: string, epreuve: string) {
+  // deno-lint-ignore no-explicit-any
+  const messages: any[] = [{
+    role: "user",
+    content: `Ouvre cette page avec l'outil web_fetch : ${url}\n` +
+      `Puis ouvre si besoin 2 ou 3 pages du même site utiles pour une course${epreuve ? ` (épreuve : ${epreuve})` : ""} : programme, horaires, parcours, règlement, ravitaillements, matériel.\n` +
+      `Réponds uniquement avec le texte utile de ces pages (dates, heures, distances, dénivelé, lieu, ravitos, barrières, matériel, accès, retrait des dossards, liens GPX/inscription en URL complètes), sans commentaire.`,
+  }];
+  for (let tour = 0; tour < 4; tour++) {
+    // deno-lint-ignore no-explicit-any
+    const rep: any = await client.beta.messages.create({
+      model: MODELE,
+      max_tokens: 16000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "low" },
+      tools: [{ type: "web_fetch_20260209", name: "web_fetch", max_uses: 5 }],
+      messages,
+    // deno-lint-ignore no-explicit-any
+    } as any);
+    if (rep.stop_reason === "pause_turn") { messages.push({ role: "assistant", content: rep.content }); continue; }
+    // deno-lint-ignore no-explicit-any
+    const texte = rep.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
+    if (texte.length < 200) throw new Error("page illisible même pour l'IA");
+    return { texte, liens: [] as string[] };
+  }
+  throw new Error("lecture trop longue");
 }
 
 Deno.serve(async (req) => {
@@ -106,26 +167,44 @@ Deno.serve(async (req) => {
   if (!cle) return json({ erreur: "La clé ANTHROPIC_API_KEY n'est pas configurée dans Supabase." }, 500);
 
   // 2. Lecture de la page
-  let url: string, epreuve: string;
+  // Trois façons de donner la course : un lien, du texte collé, ou un fichier (PDF ou capture d'écran)
+  let url = "", epreuve = "", colle = "";
+  let fichier: { type: string; data: string } | null = null;
   try {
     const body = await req.json();
-    url = new URL(String(body.url)).href;
     epreuve = String(body.epreuve || "").slice(0, 200);
-    if (!/^https?:/.test(url)) throw new Error();
+    colle = String(body.texte || "").slice(0, MAX_TEXTE);
+    if (body.fichier?.data) {
+      const type = String(body.fichier.type || "");
+      if (!/^(application\/pdf|image\/(png|jpeg|gif|webp))$/.test(type)) return json({ erreur: "Fichier accepté : PDF ou image (PNG, JPEG)." }, 400);
+      fichier = { type, data: String(body.fichier.data) };
+    }
+    if (body.url) {
+      url = new URL(String(body.url)).href;
+      if (!/^https?:/.test(url)) throw new Error();
+    }
+    if (!url && !colle && !fichier) throw new Error();
   } catch {
     return json({ erreur: "Adresse de page invalide." }, 400);
   }
-  let page;
-  try {
-    page = await telecharger(url, 5_000_000);
-  } catch (e) {
-    return json({ erreur: `Impossible de lire la page : ${(e as Error).message}.` }, 502);
+  const client = new Anthropic({ apiKey: cle });
+
+  let texte0 = "", liens: string[] = [], bruts: { url: string; txt: string }[] = [];
+  let page = { url: url || "(texte collé)", texte: "" };
+  const essais: string[] = [];
+  if (url) {
+    try {
+      const p = await telecharger(url, 5_000_000);
+      page = p;
+      ({ texte: texte0, liens, bruts } = htmlEnTexte(p.texte, p.url));
+    } catch (e) {
+      essais.push(`accès direct : ${(e as Error).message}`);
+    }
   }
-  const { texte: texte0, liens, bruts } = htmlEnTexte(page.texte, page.url);
 
   // Pages annexes du même site (programme, horaires, règlement, ravitos, matériel…) : les infos y sont souvent
   const MOTS = /programme|horaire|schedule|info|telecharg|download|inscri|registration|pratique|reglement|règlement|parcours|epreuve|épreuve|course|ravitaill|barri|materiel|matériel|equipement|acces|accès|dossard|depart|départ|navette|plan|faq|trail|km/i;
-  const hote = new URL(page.url).host;
+  const hote = url ? new URL(page.url).host : "";
   const vus = new Set([page.url.split("#")[0]]);
   const annexes = bruts.filter(l => {
     try {
@@ -135,19 +214,35 @@ Deno.serve(async (req) => {
       vus.add(cle); return true;
     } catch { return false; }
   }).slice(0, 8);
-  const sousPages = (await Promise.allSettled(annexes.map(l => telecharger(l.url, 3_000_000))))
+  const sousPages = (await Promise.allSettled(annexes.map(l => telecharger(l.url, 3_000_000, page.url))))
     .map((r, i) => r.status === "fulfilled" ? { url: annexes[i].url, ...htmlEnTexte(r.value.texte, r.value.url) } : null)
     .filter((x): x is NonNullable<typeof x> => !!x && x.texte.length > 200);
-  const liensTous = [...new Set(liens.concat(...sousPages.map(p => p.liens)))].slice(0, 600);
+  let liensTous = [...new Set(liens.concat(...sousPages.map(p => p.liens)))].slice(0, 600);
   let texte = texte0;
   for (const p of sousPages) texte += `\n\n=== Page annexe : ${p.url} ===\n${p.texte.slice(0, 40_000)}`;
+
+  // Page bloquée (403…) ou vide (site en JavaScript) : on essaie les secours
+  if (url && texte0.length < 500 && !sousPages.length) {
+    if (texte0) essais.push("accès direct : presque pas de texte (site en JavaScript)");
+    let secours: { texte: string; liens: string[] } | null = null;
+    try { secours = await viaLecteur(url); if (secours.texte.length < 300) { essais.push("lecteur en ligne : page vide"); secours = null; } }
+    catch (e) { essais.push(`lecteur en ligne : ${(e as Error).message}`); }
+    if (!secours) {
+      try { secours = await viaClaude(client, url, epreuve); }
+      catch (e) { essais.push(`lecture par l'IA : ${(e as Error).message}`); }
+    }
+    if (secours) {
+      texte = secours.texte;
+      liensTous = [...new Set(liensTous.concat(secours.liens))].slice(0, 600);
+    }
+  }
+  if (colle) texte = (texte ? texte + "\n\n=== Texte collé par l'utilisateur ===\n" : "") + colle;
   const tronque = texte.length > MAX_TEXTE;
-  if (texte0.length < 200 && !sousPages.length) {
-    return json({ erreur: "La page contient très peu de texte (site qui se charge en JavaScript ?). Essaie la page « infos » ou « règlement » de la course." }, 422);
+  if (texte.length < 200 && !fichier) {
+    return json({ erreur: `Ce site refuse toute lecture automatique (${essais.join(" ; ")}). Utilise « Le site refuse ? » : colle le texte de la page ou ajoute un PDF / une capture d'écran.` }, 422);
   }
 
   // 3. Extraction avec Claude (sortie JSON garantie par le schéma)
-  const client = new Anthropic({ apiKey: cle });
   let reponse;
   try {
     reponse = await client.beta.messages.create({
@@ -159,9 +254,15 @@ Deno.serve(async (req) => {
       system: SYSTEME,
       messages: [{
         role: "user",
-        content: `Page : ${page.url}\n${epreuve ? `Épreuve qui m'intéresse : ${epreuve}\n` : ""}` +
-          `${tronque ? "(Texte de la page coupé car très long.)\n" : ""}` +
-          `<texte_page>\n${texte.slice(0, MAX_TEXTE)}\n</texte_page>\n<liens_page>\n${liensTous.join("\n")}\n</liens_page>`,
+        content: [
+          ...(fichier ? [fichier.type === "application/pdf"
+            ? { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: fichier.data } }
+            : { type: "image" as const, source: { type: "base64" as const, media_type: fichier.type as "image/png", data: fichier.data } }] : []),
+          { type: "text" as const, text: `Page : ${page.url}\n${epreuve ? `Épreuve qui m'intéresse : ${epreuve}\n` : ""}` +
+            `${fichier ? "Le document joint (PDF ou capture d'écran de la page) contient aussi les infos de la course.\n" : ""}` +
+            `${tronque ? "(Texte de la page coupé car très long.)\n" : ""}` +
+            `<texte_page>\n${texte.slice(0, MAX_TEXTE)}\n</texte_page>\n<liens_page>\n${liensTous.join("\n")}\n</liens_page>` },
+        ],
       }],
     });
   } catch (e) {
@@ -184,7 +285,7 @@ Deno.serve(async (req) => {
   let gpx: string | null = null, gpx_nom: string | null = null, avertissement: string | null = null;
   if (course.gpx_url) {
     try {
-      const g = await telecharger(new URL(course.gpx_url, page.url).href, 15_000_000);
+      const g = await telecharger(new URL(course.gpx_url, url || undefined).href, 15_000_000, url || undefined);
       if (/<gpx[\s>]/i.test(g.texte.slice(0, 2000))) {
         gpx = g.texte;
         gpx_nom = decodeURIComponent(new URL(g.url).pathname.split("/").pop() || "trace.gpx");

@@ -131,10 +131,10 @@
     donnees(c) { const d = Object.assign({}, c); delete d.id; delete d._meta; delete d._existe; return d; },
 
     // Lecture automatique de la page d'une course (fonction Supabase « lire-course » + Claude)
-    async lireCourse(url, epreuve) {
+    async lireCourse(url, epreuve, extra) {
       let data, error;
       for (const nom of (C.fonctionsLecture || ["lire-course"])) {
-        ({ data, error } = await sb.functions.invoke(nom, { body: { url, epreuve } }));
+        ({ data, error } = await sb.functions.invoke(nom, { body: Object.assign({ url, epreuve }, extra || {}) }));
         if (!(error && error.context?.status === 404)) break; // fonction absente sous ce nom : essayer le suivant
       }
       if (error) {

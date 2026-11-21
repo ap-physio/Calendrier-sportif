@@ -40,6 +40,11 @@
           <label class="f-full"><span>Lien de la page de la course</span><input id="a-url" type="url" inputmode="url" placeholder="https://…"></label>
           <label><span>Épreuve (si plusieurs, ex. « 35 km »)</span><input id="a-epreuve"></label>
           <div class="auto-go"><button class="btn" type="button" id="a-go">Remplir automatiquement</button></div>
+          <details class="f-full auto-plus" id="a-plus">
+            <summary>Le site refuse ? Colle le texte de la page ou ajoute un PDF / une capture</summary>
+            <label class="f-full"><span>Texte de la page (sélectionne tout sur le site, copie, colle ici)</span><textarea id="a-texte" rows="5"></textarea></label>
+            <label class="f-full"><span>Ou un fichier : PDF du règlement, capture d'écran…</span><input id="a-fichier" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"></label>
+          </details>
           <p class="f-full auto-msg" id="a-msg" role="status" hidden></p>
         </fieldset>
         <fieldset><legend>L'essentiel</legend>
@@ -183,11 +188,21 @@
   async function remplirAuto(form) {
     const msg = form.querySelector("#a-msg"), go = form.querySelector("#a-go");
     const url = form.querySelector("#a-url").value.trim();
-    if (!/^https?:\/\//.test(url)) { msg.textContent = "Colle d'abord l'adresse complète de la page (https://…)."; msg.className = "f-full auto-msg ko"; msg.hidden = false; return; }
-    go.disabled = true; go.textContent = "Lecture de la page… (20 à 60 s)";
+    const texte = form.querySelector("#a-texte").value.trim();
+    const f = form.querySelector("#a-fichier").files[0];
+    const erreur = t => { msg.textContent = t; msg.className = "f-full auto-msg ko"; msg.hidden = false; };
+    if (url && !/^https?:\/\//.test(url)) return erreur("L'adresse doit commencer par https://");
+    if (!url && !texte && !f) return erreur("Colle d'abord l'adresse complète de la page (https://…), ou le texte de la page, ou ajoute un fichier.");
+    if (f && f.size > 8_000_000) return erreur("Fichier trop gros (8 Mo maximum).");
+    go.disabled = true; go.textContent = "Lecture de la page… (20 à 90 s)";
     msg.hidden = true;
     try {
-      const r = await window.DB.lireCourse(url, form.querySelector("#a-epreuve").value.trim());
+      let fichier = null;
+      if (f) {
+        const data = await new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1]); fr.onerror = ko; fr.readAsDataURL(f); });
+        fichier = { type: f.type || (/\.pdf$/i.test(f.name) ? "application/pdf" : ""), data };
+      }
+      const r = await window.DB.lireCourse(url, form.querySelector("#a-epreuve").value.trim(), { texte, fichier });
       const c = r.course || {}, remplis = [];
       const met = (id, v, nom) => {
         const el = form.querySelector(id);
@@ -201,7 +216,7 @@
       met("#f-dist", c.distance_km, "distance"); met("#f-dp", c.denivele_pos, "D+");
       met("#f-acces", c.acces, "accès"); met("#f-dossard", c.retrait_dossard, "dossards");
       met("#f-mat", (c.materiel || []).join("\n"), "matériel"); met("#f-notes", c.notes, "notes");
-      const liens = [{ titre: "Site de la course", url }].concat((c.liens || []).filter(l => l.url !== url));
+      const liens = (url ? [{ titre: "Site de la course", url }] : []).concat((c.liens || []).filter(l => l.url !== url));
       const listes = { liens, ravitos: c.ravitos || [], barrieres: (c.barrieres || []).map(b => Object.assign({}, b, { heure: heureNorm(b.heure) })) };
       for (const [nom, vals] of Object.entries(listes)) {
         const box = form.querySelector(`.f-liste[data-nom="${nom}"] .f-rows`);
@@ -228,6 +243,7 @@
       msg.textContent = t; msg.className = "f-full auto-msg ok";
     } catch (e) {
       msg.textContent = e.message; msg.className = "f-full auto-msg ko";
+      if (/refuse|Impossible de lire/.test(e.message)) form.querySelector("#a-plus").open = true;
     }
     msg.hidden = false; go.disabled = false; go.textContent = "Remplir automatiquement";
   }

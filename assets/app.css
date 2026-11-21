@@ -266,4 +266,9 @@ ul.check input { accent-color: var(--accent); width: 18px; height: 18px; }
 .auto-go { display: flex; align-items: end; }
 .auto-msg { margin: 0; font-size: 14px; padding: 10px 12px; border-radius: 10px; background: var(--card); color: var(--ink); }
 .auto-msg.ko { color: #c92a2a; }
+.auto-plus { font-size: 14px; }
+.auto-plus summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
+.auto-plus[open] summary { margin-bottom: 8px; }
+.auto-plus label { display: grid; gap: 4px; margin-bottom: 10px; }
+.auto-plus textarea { width: 100%; }
 .gpx-note { margin: 0; font-size: 13px; color: var(--ok); }
