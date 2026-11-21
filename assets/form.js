@@ -29,6 +29,8 @@
     return `<div class="f-row" data-liste="${nom}">${cols.map(c => champ(nom, c, val)).join("")}<button type="button" class="f-del" aria-label="Retirer cette ligne">×</button></div>`;
   }
 
+  const BOOKMARKLET = `javascript:(()=>{const c={url:location.href,texte:document.body.innerText.slice(0,150000),liens:[...document.links].map(a=>(a.innerText||'').trim().slice(0,80)+' -> '+a.href).concat([...document.querySelectorAll('iframe')].map(f=>'(carte intégrée) -> '+f.src)).slice(0,500)};const o='https://ap-physio.github.io';const w=window.open(o+'/Calendrier-sportif/#/ajouter','_blank');let n=0,ok=false;addEventListener('message',e=>{if(e.origin===o&&e.data&&e.data.type==='calendrier-import-ok')ok=true});const t=setInterval(()=>{if(ok||++n>60)return clearInterval(t);try{w.postMessage({type:'calendrier-import',course:c},o)}catch(e){}},500)})()`;
+
   function render(app, c, DATA, onSaved, dateInitiale) {
     const nouveau = !c;
     c = c || { coureurs: window.DB?.moi ? [window.DB.moi.coureur] : [], statut: "envisagé", date: dateInitiale };
@@ -44,6 +46,11 @@
             <summary>Le site refuse ? Colle le texte de la page ou ajoute un PDF / une capture</summary>
             <label class="f-full"><span>Texte de la page (sélectionne tout sur le site, copie, colle ici)</span><textarea id="a-texte" rows="5"></textarea></label>
             <label class="f-full"><span>Ou un fichier : PDF du règlement, capture d'écran…</span><input id="a-fichier" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"></label>
+            <div class="f-full bm-box">
+              <p><b>Le plus simple sur Mac :</b> glisse ce bouton dans ta barre de favoris (une seule fois).</p>
+              <p><a class="btn ghost bookmarklet" href="${BOOKMARKLET}" onclick="event.preventDefault()">📥 Envoyer au calendrier</a></p>
+              <p class="muted">Ensuite, sur la page de n'importe quelle course, clique sur ce favori : le calendrier s'ouvre et se remplit avec ce que tu vois à l'écran, même si le site bloque les robots.</p>
+            </div>
           </details>
           <p class="f-full auto-msg" id="a-msg" role="status" hidden></p>
         </fieldset>
@@ -86,6 +93,15 @@
 
     const form = app.querySelector("#fcourse");
     app.querySelector("#a-go").onclick = () => remplirAuto(form);
+    // Page envoyée par le bouton « Envoyer au calendrier » : on remplit tout de suite
+    const imp = nouveau && window.__importCourse;
+    if (imp) {
+      window.__importCourse = null;
+      form.querySelector("#a-url").value = imp.url;
+      form.querySelector("#a-texte").value = imp.texte;
+      form._liens = imp.liens;
+      remplirAuto(form);
+    }
     // Les dates des trajets / logement s'ouvrent sur la date de la course plutôt que sur aujourd'hui
     // Distance et D+ calculés depuis le GPX dès qu'un fichier est choisi (prioritaires sur la page)
     form.querySelector("#f-gpx").addEventListener("change", e => { const f = e.target.files[0]; if (f) f.text().then(t => depuisGpx(form, t)); });
@@ -202,7 +218,7 @@
         const data = await new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1]); fr.onerror = ko; fr.readAsDataURL(f); });
         fichier = { type: f.type || (/\.pdf$/i.test(f.name) ? "application/pdf" : ""), data };
       }
-      const r = await window.DB.lireCourse(url, form.querySelector("#a-epreuve").value.trim(), { texte, fichier });
+      const r = await window.DB.lireCourse(url, form.querySelector("#a-epreuve").value.trim(), { texte, fichier, liens: form._liens || [] });
       const c = r.course || {}, remplis = [];
       const met = (id, v, nom) => {
         const el = form.querySelector(id);
@@ -237,6 +253,7 @@
         }
       }
       let t = remplis.length ? `Rempli : ${remplis.join(", ")}. Vérifie avant d'enregistrer.` : "Rien de nouveau trouvé sur cette page (les champs déjà remplis ne sont pas modifiés).";
+      if (r.source) t += ` (Lu via : ${r.source}.)`;
       if (c.epreuve_choisie && (c.autres_epreuves || []).length) t += ` Épreuve retenue : ${c.epreuve_choisie}. Autres épreuves : ${c.autres_epreuves.join(", ")}. Pour une autre, indique-la dans « Épreuve » et relance après avoir vidé les champs.`;
       if (r.avertissement) t += " " + r.avertissement;
       if (r.tronque) t += " (Page très longue : seule la première partie a été lue.)";

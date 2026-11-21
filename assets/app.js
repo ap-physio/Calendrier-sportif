@@ -23,6 +23,20 @@
 
   const DB = window.DB && window.DB.actif ? window.DB : null;
   window.addEventListener("hashchange", () => DATA && route());
+  // Bouton « Envoyer au calendrier » : la page de la course (lue par le navigateur de l'utilisateur) envoie son texte ici
+  window.addEventListener("message", e => {
+    const d = e.data;
+    if (!d || d.type !== "calendrier-import" || !d.course) return;
+    try { e.source && e.source.postMessage({ type: "calendrier-import-ok" }, e.origin); } catch (x) {}
+    if (window.__importCourse && window.__importCourse.url === d.course.url) return; // déjà reçu
+    window.__importCourse = {
+      url: String(d.course.url || "").slice(0, 2000),
+      texte: String(d.course.texte || "").slice(0, 150000),
+      liens: (Array.isArray(d.course.liens) ? d.course.liens : []).slice(0, 500).map(x => String(x).slice(0, 600)),
+    };
+    if (location.hash !== "#/ajouter") location.hash = "#/ajouter";
+    else if (DATA) route();
+  });
 
   if (!DB) {
     fetch("data/courses.json", { cache: "no-cache" })

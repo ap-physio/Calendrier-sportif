@@ -107,6 +107,10 @@ async function telecharger(url: string, maxOctets: number, referer?: string) {
   return { texte: new TextDecoder().decode(buf), url: r.url, type: r.headers.get("content-type") || "" };
 }
 
+// Page anti-robot (Cloudflare « Just a moment… », CAPTCHA…) : ce n'est pas la vraie page
+const ANTI_ROBOT = /just a moment|performing security verification|verify you are (a )?human|attention required|cf-chl|challenge-platform|enable javascript and cookies|captcha|access denied|requiring captcha/i;
+const estAntiRobot = (t: string) => t.length < 6000 && ANTI_ROBOT.test(t);
+
 // Secours n°1 : un lecteur en ligne (r.jina.ai) qui ouvre la page dans un vrai navigateur,
 // exécute le JavaScript et renvoie le texte avec les liens.
 async function viaLecteur(url: string) {
@@ -116,6 +120,7 @@ async function viaLecteur(url: string) {
   });
   if (!r.ok) throw new Error(`lecteur ${r.status}`);
   const md = await r.text();
+  if (estAntiRobot(md)) throw new Error("bloqué par la protection anti-robot du site");
   const liens: string[] = [];
   for (const m of md.matchAll(/\[([^\]]{0,120})\]\((https?:[^)\s]+)\)/g)) liens.push(`${m[1].trim() || "(lien)"} -> ${m[2]}`);
   return { texte: md.slice(0, MAX_TEXTE), liens: [...new Set(liens)].slice(0, 400) };
@@ -128,7 +133,8 @@ async function viaClaude(client: Anthropic, url: string, epreuve: string) {
     role: "user",
     content: `Ouvre cette page avec l'outil web_fetch : ${url}\n` +
       `Puis ouvre si besoin 2 ou 3 pages du même site utiles pour une course${epreuve ? ` (épreuve : ${epreuve})` : ""} : programme, horaires, parcours, règlement, ravitaillements, matériel.\n` +
-      `Réponds uniquement avec le texte utile de ces pages (dates, heures, distances, dénivelé, lieu, ravitos, barrières, matériel, accès, retrait des dossards, liens GPX/inscription en URL complètes), sans commentaire.`,
+      `Recopie le texte complet de ces pages, mot pour mot et sans résumer (noms, dates, heures, distances, dénivelé, lieu, ravitos, barrières, matériel, accès, retrait des dossards, liens GPX/inscription en URL complètes).\n` +
+      `Si une page n'est qu'une vérification anti-robot ou ne s'ouvre pas, réponds seulement : BLOQUE.`,
   }];
   for (let tour = 0; tour < 4; tour++) {
     // deno-lint-ignore no-explicit-any
@@ -145,7 +151,7 @@ async function viaClaude(client: Anthropic, url: string, epreuve: string) {
     if (rep.stop_reason === "pause_turn") { messages.push({ role: "assistant", content: rep.content }); continue; }
     // deno-lint-ignore no-explicit-any
     const texte = rep.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
-    if (texte.length < 200) throw new Error("page illisible même pour l'IA");
+    if (texte.length < 200 || /^BLOQUE/.test(texte) || estAntiRobot(texte)) throw new Error("bloqué par la protection anti-robot du site");
     return { texte, liens: [] as string[] };
   }
   throw new Error("lecture trop longue");
@@ -168,12 +174,13 @@ Deno.serve(async (req) => {
 
   // 2. Lecture de la page
   // Trois façons de donner la course : un lien, du texte collé, ou un fichier (PDF ou capture d'écran)
-  let url = "", epreuve = "", colle = "";
+  let url = "", epreuve = "", colle = "", liensEnvoyes: string[] = [];
   let fichier: { type: string; data: string } | null = null;
   try {
     const body = await req.json();
     epreuve = String(body.epreuve || "").slice(0, 200);
     colle = String(body.texte || "").slice(0, MAX_TEXTE);
+    if (Array.isArray(body.liens)) liensEnvoyes = body.liens.slice(0, 500).map((x: unknown) => String(x).slice(0, 600));
     if (body.fichier?.data) {
       const type = String(body.fichier.type || "");
       if (!/^(application\/pdf|image\/(png|jpeg|gif|webp))$/.test(type)) return json({ erreur: "Fichier accepté : PDF ou image (PNG, JPEG)." }, 400);
@@ -192,11 +199,15 @@ Deno.serve(async (req) => {
   let texte0 = "", liens: string[] = [], bruts: { url: string; txt: string }[] = [];
   let page = { url: url || "(texte collé)", texte: "" };
   const essais: string[] = [];
-  if (url) {
+  const dejaLu = colle.length > 500; // texte envoyé par le navigateur de l'utilisateur : inutile de relire le site
+  if (url) page.url = url;
+  if (url && !dejaLu) {
     try {
       const p = await telecharger(url, 5_000_000);
+      const lu = htmlEnTexte(p.texte, p.url);
+      if (estAntiRobot(lu.texte)) throw new Error("bloqué par la protection anti-robot du site");
       page = p;
-      ({ texte: texte0, liens, bruts } = htmlEnTexte(p.texte, p.url));
+      ({ texte: texte0, liens, bruts } = lu);
     } catch (e) {
       essais.push(`accès direct : ${(e as Error).message}`);
     }
@@ -222,13 +233,14 @@ Deno.serve(async (req) => {
   for (const p of sousPages) texte += `\n\n=== Page annexe : ${p.url} ===\n${p.texte.slice(0, 40_000)}`;
 
   // Page bloquée (403…) ou vide (site en JavaScript) : on essaie les secours
-  if (url && texte0.length < 500 && !sousPages.length) {
+  let source = texte0.length >= 500 ? "site" : "";
+  if (url && !dejaLu && texte0.length < 500 && !sousPages.length) {
     if (texte0) essais.push("accès direct : presque pas de texte (site en JavaScript)");
     let secours: { texte: string; liens: string[] } | null = null;
-    try { secours = await viaLecteur(url); if (secours.texte.length < 300) { essais.push("lecteur en ligne : page vide"); secours = null; } }
+    try { secours = await viaLecteur(url); source = "lecteur en ligne"; if (secours.texte.length < 300) { essais.push("lecteur en ligne : page vide"); secours = null; } }
     catch (e) { essais.push(`lecteur en ligne : ${(e as Error).message}`); }
     if (!secours) {
-      try { secours = await viaClaude(client, url, epreuve); }
+      try { secours = await viaClaude(client, url, epreuve); source = "lecture par l'IA"; }
       catch (e) { essais.push(`lecture par l'IA : ${(e as Error).message}`); }
     }
     if (secours) {
@@ -236,10 +248,12 @@ Deno.serve(async (req) => {
       liensTous = [...new Set(liensTous.concat(secours.liens))].slice(0, 600);
     }
   }
-  if (colle) texte = (texte ? texte + "\n\n=== Texte collé par l'utilisateur ===\n" : "") + colle;
+  if (colle) { texte = (texte ? texte + "\n\n=== Texte collé par l'utilisateur ===\n" : "") + colle; source = dejaLu ? "page envoyée par ton navigateur" : source || "texte collé"; }
+  if (liensEnvoyes.length) liensTous = [...new Set(liensTous.concat(liensEnvoyes))].slice(0, 800);
+  if (fichier) source = source ? source + " + fichier" : "fichier";
   const tronque = texte.length > MAX_TEXTE;
   if (texte.length < 200 && !fichier) {
-    return json({ erreur: `Ce site refuse toute lecture automatique (${essais.join(" ; ")}). Utilise « Le site refuse ? » : colle le texte de la page ou ajoute un PDF / une capture d'écran.` }, 422);
+    return json({ erreur: `Ce site bloque les robots (${essais.join(" ; ")}). Ouvre « Le site refuse ? » : utilise le favori « Envoyer au calendrier », ou colle le texte de la page, ou ajoute un PDF / une capture.` }, 422);
   }
 
   // 3. Extraction avec Claude (sortie JSON garantie par le schéma)
@@ -295,5 +309,5 @@ Deno.serve(async (req) => {
       avertissement = `GPX trouvé mais impossible à télécharger : ${(e as Error).message}.`;
     }
   }
-  return json({ course, gpx, gpx_nom, avertissement, tronque, modele: reponse.model });
+  return json({ course, gpx, gpx_nom, avertissement, tronque, source, essais, modele: reponse.model });
 });
