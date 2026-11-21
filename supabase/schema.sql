@@ -112,3 +112,9 @@ drop policy if exists "membres remplacent gpx" on storage.objects;
 create policy "membres remplacent gpx" on storage.objects for update to authenticated using (bucket_id = 'gpx' and public.est_membre());
 drop policy if exists "membres suppriment gpx" on storage.objects;
 create policy "membres suppriment gpx" on storage.objects for delete to authenticated using (bucket_id = 'gpx' and public.est_membre());
+
+-- 6. Droits pour les comptes connectés (certains projets Supabase ne les donnent pas d'office)
+grant usage on schema public to authenticated;
+grant select on public.membres to authenticated;
+grant select, insert, update, delete on public.courses to authenticated;
+grant select on public.historique to authenticated;
