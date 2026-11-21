@@ -82,7 +82,16 @@
       }
     },
 
-    async enregistrer(id, data, fichierGpx, nouveau) {
+    async enregistrer(id, data, fichierGpx, nouveau, fichiersSeg) {
+      for (const seg of data.segments || []) {
+        const f = fichiersSeg && fichiersSeg[seg.sport];
+        if (!f) continue;
+        const chemin = `${id}-${seg.sport}.gpx`;
+        const { error } = await sb.storage.from("gpx").upload(chemin, f, { upsert: true, contentType: "application/gpx+xml" });
+        if (error) throw new Error("Envoi du GPX " + seg.sport + " impossible : " + error.message);
+        seg.gpx = chemin;
+        try { localStorage.removeItem("cache:gpx:" + chemin); } catch (e) {}
+      }
       if (fichierGpx) {
         const chemin = `${id}.gpx`;
         const { error } = await sb.storage.from("gpx").upload(chemin, fichierGpx, { upsert: true, contentType: "application/gpx+xml" });

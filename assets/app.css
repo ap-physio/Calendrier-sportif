@@ -279,3 +279,10 @@ ul.check input { accent-color: var(--accent); width: 18px; height: 18px; }
 .tag.insc.oui { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
 .tag.insc.non { background: var(--chip-bg); color: var(--muted); border: 1px dashed var(--line); }
 .go-depart { margin-bottom: 18px; } .go-depart h2 { margin-bottom: 4px; } .go-depart .actions { margin: 10px 0 0; }
+
+/* Triathlon : distances par discipline */
+.seg-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: -8px 0 18px; }
+.seg-chip { border: 1px solid var(--line); border-left: 4px solid var(--c); background: var(--card); border-radius: 8px; padding: 4px 10px; font-size: 14px; }
+.notice.inscr { background: color-mix(in srgb, #f59f00 18%, var(--card)); }
+.tag.insc.bientot { background: color-mix(in srgb, #f59f00 22%, transparent); color: #b35c00; border: 0; }
+.fieldset-aide, .f-aide { margin: 0; font-size: 13px; }

@@ -31,6 +31,8 @@
 
   const BOOKMARKLET = `javascript:(()=>{const c={url:location.href,texte:document.body.innerText.slice(0,150000),liens:[...document.links].map(a=>(a.innerText||'').trim().slice(0,80)+' -> '+a.href).concat([...document.querySelectorAll('iframe')].map(f=>'(carte intégrée) -> '+f.src)).slice(0,500)};const o='https://ap-physio.github.io';const w=window.open(o+'/Calendrier-sportif/#/ajouter','_blank');let n=0,ok=false;addEventListener('message',e=>{if(e.origin===o&&e.data&&e.data.type==='calendrier-import-ok')ok=true});const t=setInterval(()=>{if(ok||++n>60)return clearInterval(t);try{w.postMessage({type:'calendrier-import',course:c},o)}catch(e){}},500)})()`;
 
+  const seg = (c, sport) => (c && c.segments || []).find(x => x.sport === sport);
+
   function render(app, c, DATA, onSaved, dateInitiale) {
     const nouveau = !c;
     c = c || { coureurs: window.DB?.moi ? [window.DB.moi.coureur] : [], statut: "envisagé", date: dateInitiale };
@@ -63,6 +65,7 @@
           </div></div>
           <label><span>Sport</span><input id="f-sport" list="sports" value="${esc(c.sport || c.format)}"><datalist id="sports">${SPORTS.map(s => `<option value="${s}">`).join("")}</datalist></label>
           <label><span>Statut</span><select id="f-statut">${["envisagé", "inscrit"].map(s => `<option ${s === c.statut ? "selected" : ""}>${s}</option>`).join("")}</select></label>
+          <label><span>Ouverture des inscriptions</span><input id="f-ouverture" type="date" value="${esc(c.ouverture_inscriptions)}"></label>
           <label><span>Lieu</span><input id="f-lieu" value="${esc(c.lieu)}"></label>
           <label><span>Pays</span><input id="f-pays" value="${esc(c.pays)}"></label>
           <label class="f-full"><span>Adresse du départ (pour Google Maps / Waze)</span><input id="f-depart" value="${esc(c.depart)}" placeholder="ex. Château de Ripaille, Thonon-les-Bains"></label>
@@ -70,6 +73,14 @@
           <label><span>Dénivelé + (m)</span><input id="f-dp" type="number" step="any" inputmode="numeric" value="${esc(c.denivele_pos)}" placeholder="calculé depuis le GPX"></label>
           <label class="f-full"><span>Trace GPX ${c.gpx ? "(un GPX est déjà enregistré : en choisir un autre le remplace)" : ""}</span><input id="f-gpx" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml"></label>
           <p class="f-full gpx-note" id="f-gpx-note" hidden></p>
+        </fieldset>
+        <fieldset class="segs"><legend>Triathlon : un parcours par discipline (facultatif)</legend>
+          <p class="f-full muted f-aide">Pour un triathlon, mets la distance de natation et un GPX par discipline : la fiche affichera le profil enchaîné natation → vélo → course à pied.</p>
+          <label><span>🏊 Natation (km)</span><input id="s-nat" type="number" step="any" inputmode="decimal" value="${esc(seg(c, "natation")?.distance_km)}" placeholder="ex. 1,5"></label>
+          <label><span>🚴 GPX vélo ${seg(c, "velo")?.gpx ? "(déjà enregistré)" : ""}</span><input id="s-velo" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml"></label>
+          <label><span>🏃 GPX course à pied ${seg(c, "cap")?.gpx ? "(déjà enregistré)" : ""}</span><input id="s-cap" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml"></label>
+          ${(c.segments || []).some(x => x.gpx) ? `<label class="f-check f-full"><input type="checkbox" id="s-effacer"> Supprimer les GPX par discipline enregistrés</label>` : ""}
+          <p class="f-full gpx-note" id="s-note" hidden></p>
         </fieldset>
         <fieldset><legend>Infos pratiques</legend>
           <label class="f-full"><span>Accès</span><textarea id="f-acces" rows="2">${esc(c.acces)}</textarea></label>
@@ -106,6 +117,7 @@
     // Les dates des trajets / logement s'ouvrent sur la date de la course plutôt que sur aujourd'hui
     // Distance et D+ calculés depuis le GPX dès qu'un fichier est choisi (prioritaires sur la page)
     form.querySelector("#f-gpx").addEventListener("change", e => { const f = e.target.files[0]; if (f) f.text().then(t => depuisGpx(form, t)); });
+    ["#s-nat", "#s-velo", "#s-cap"].forEach(sel => form.querySelector(sel).addEventListener("change", () => depuisSegments(form)));
 
     const caleSurCourse = e => {
       const el = e.target;
@@ -142,6 +154,7 @@
       const d = {
         nom: val("#f-nom"), date: val("#f-date"), heure_depart: val("#f-heure") || undefined,
         coureurs: qui, sport: val("#f-sport") || undefined, statut: val("#f-statut"),
+        ouverture_inscriptions: val("#f-ouverture") || undefined,
         lieu: val("#f-lieu") || undefined, pays: val("#f-pays") || undefined, depart: val("#f-depart") || undefined,
         distance_km: num("#f-dist"), denivele_pos: num("#f-dp"),
         gpx: c.gpx || undefined,
@@ -160,14 +173,25 @@
           return o;
         }).filter(o => Object.keys(o).some(k => k !== "type"));
       }
+      // Parcours par discipline (triathlon)
+      const effacer = form.querySelector("#s-effacer")?.checked;
+      const nat = num("#s-nat");
+      d.segments = [];
+      if (nat) d.segments.push({ sport: "natation", distance_km: nat });
+      for (const sp of ["velo", "cap"]) {
+        const ancien = !effacer && seg(c, sp);
+        if (form.querySelector("#s-" + sp).files[0] || ancien?.gpx) d.segments.push({ sport: sp, gpx: ancien?.gpx });
+      }
+      if (!d.segments.some(x => x.sport !== "natation")) d.segments = [];
       Object.keys(d).forEach(k => { if (d[k] === undefined || (Array.isArray(d[k]) && !d[k].length)) delete d[k]; });
 
       const fichier = form.querySelector("#f-gpx").files[0] || null;
+      const fichiersSeg = { velo: form.querySelector("#s-velo").files[0] || null, cap: form.querySelector("#s-cap").files[0] || null };
       const id = nouveau ? `${slug(d.nom)}-${d.date.slice(0, 4)}` : c.id;
       const bouton = form.querySelector("#f-save");
       bouton.disabled = true; bouton.textContent = "Enregistrement…"; err.hidden = true;
       try {
-        await window.DB.enregistrer(id, d, fichier, nouveau);
+        await window.DB.enregistrer(id, d, fichier, nouveau, fichiersSeg);
         onSaved(id);
       } catch (ex) {
         err.textContent = ex.message; err.hidden = false;
@@ -185,6 +209,30 @@
     if (m[3] && /a/i.test(m[3]) && h === 12) h = 0;
     if (h > 23) return "";
     return String(h).padStart(2, "0") + ":" + (m[2] || "00");
+  }
+
+  // Triathlon : distance totale et D+ = natation + vélo + course à pied
+  async function depuisSegments(form) {
+    const note = form.querySelector("#s-note");
+    let dist = Number(String(form.querySelector("#s-nat").value).replace(",", ".")) || 0, dp = 0;
+    const morceaux = [];
+    if (dist) morceaux.push(`natation ${String(dist).replace(".", ",")} km`);
+    try {
+      for (const [sp, nom] of [["velo", "vélo"], ["cap", "course à pied"]]) {
+        const f = form.querySelector("#s-" + sp).files[0];
+        if (!f) continue;
+        const t = window.GPX.parse(await f.text());
+        if (t.length < 2) throw new Error();
+        const s = window.GPX.stats(t);
+        dist += s.dist; dp += s.dplus;
+        morceaux.push(`${nom} ${String(Math.round(s.dist * 10) / 10).replace(".", ",")} km${s.hasEle ? ` / ${Math.round(s.dplus)} m D+` : ""}`);
+      }
+    } catch (e) { note.textContent = "Un des fichiers GPX n'a pas pu être lu."; note.hidden = false; return; }
+    if (morceaux.length < 2 && !form.querySelector("#s-velo").files[0] && !form.querySelector("#s-cap").files[0]) { note.hidden = true; return; }
+    form.querySelector("#f-dist").value = Math.round(dist * 10) / 10;
+    if (dp) form.querySelector("#f-dp").value = Math.round(dp);
+    note.textContent = `Calculé : ${morceaux.join(" + ")}. Total ${String(Math.round(dist * 10) / 10).replace(".", ",")} km, ${Math.round(dp)} m D+.`;
+    note.hidden = false;
   }
 
   function depuisGpx(form, texte) {
@@ -231,6 +279,7 @@
       met("#f-nom", c.nom, "nom"); met("#f-date", c.date, "date"); met("#f-heure", c.heure_depart, "heure");
       met("#f-sport", c.sport, "sport"); met("#f-lieu", c.lieu, "lieu"); met("#f-pays", c.pays, "pays");
       met("#f-depart", c.depart_adresse, "adresse du départ");
+      met("#f-ouverture", c.ouverture_inscriptions, "ouverture des inscriptions");
       met("#f-dist", c.distance_km, "distance"); met("#f-dp", c.denivele_pos, "D+");
       met("#f-acces", c.acces, "accès"); met("#f-dossard", c.retrait_dossard, "dossards");
       met("#f-mat", (c.materiel || []).join("\n"), "matériel"); met("#f-notes", c.notes, "notes");

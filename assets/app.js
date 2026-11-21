@@ -283,7 +283,7 @@
     pop.innerHTML = `<div class="pop-date">${d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</div>` +
       cs.map(c => `<div class="pop-race">
         <a class="pop-name" href="#/course/${encodeURIComponent(c.id)}">${esc(c.nom)}</a>
-        <div class="pop-tags">${tags(c)}<span class="tag insc ${c.statut === "inscrit" ? "oui" : "non"}">${c.statut === "inscrit" ? "✓ Inscrit" : "Non inscrit"}</span></div>
+        <div class="pop-tags">${tags(c)}<span class="tag insc ${c.statut === "inscrit" ? "oui" : "non"}">${c.statut === "inscrit" ? "✓ Inscrit" : "Non inscrit"}</span>${ouvertureInscr(c) ? `<span class="tag insc bientot">📅 ${esc(ouvertureInscr(c).replace("Inscriptions le ", "Ouverture "))}</span>` : ""}</div>
       </div>`).join("") +
       (DB ? `<a class="pop-add ${cs.length ? "" : "seul"}" href="#/ajouter/${date}">+ Ajouter une course${cs.length ? " ce jour" : ""}</a>` : "");
     cal.appendChild(pop);
@@ -385,7 +385,20 @@
   }
 
   /* ---------- Fiche course ---------- */
+  const SEGS = {
+    natation: { nom: "Natation", ico: "🏊", couleur: "#1c7ed6" },
+    velo: { nom: "Vélo", ico: "🚴", couleur: "#e4572e" },
+    cap: { nom: "Course à pied", ico: "🏃", couleur: "#2f9e44" },
+  };
+  // Inscriptions pas encore ouvertes : renvoie le texte de l'encart, sinon null
+  function ouvertureInscr(c) {
+    if (!c.ouverture_inscriptions || c.statut === "inscrit" || joursAvant(c.ouverture_inscriptions) <= 0) return null;
+    return "Inscriptions le " + parseDate(c.ouverture_inscriptions).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+  }
+
   function renderCourse(c) {
+    const segsGpx = (c.segments || []).filter(x => x.gpx);
+    const aTrace = !!(c.gpx || segsGpx.length);
     document.title = c.nom + " · Calendrier Courses";
     const j = joursAvant(c.date);
     const noms = (c.coureurs || []).map(id => (DATA.coureurs[id] || { nom: id }).nom).join(" et ");
@@ -395,6 +408,7 @@
       <h1>${esc(c.nom)}</h1>
       <div class="muted head-meta">${tags(c)} ${esc(noms)} · ${esc(fmtDate(c.date))}${c.heure_depart ? " · départ " + esc(c.heure_depart) : ""}</div>
       ${c.exemple ? `<div class="notice">${esc(c.exemple)}</div>` : ""}
+      ${ouvertureInscr(c) ? `<div class="notice inscr">📅 <b>${esc(ouvertureInscr(c))}</b> : pas encore ouvertes${(c.liens || []).find(l => /inscri/i.test(l.titre)) ? ` · <a href="${esc((c.liens || []).find(l => /inscri/i.test(l.titre)).url)}" target="_blank" rel="noopener">page des inscriptions</a>` : ""}</div>` : ""}
       ${DB ? (DATA.annee_docs?.documents || []).filter(d => d.expire && d.expire < c.date && (c.coureurs || []).concat("commun").includes(d.pour || "commun"))
         .map(d => `<div class="notice">« ${esc(d.nom)} » expire le ${esc(fmtCourt(d.expire))}, avant cette course. <a href="#/documents">Voir les documents</a></div>`).join("") : ""}
       <div class="stats">
@@ -404,13 +418,14 @@
         <div class="stat"><div class="v">${j > 0 ? "J-" + j : j === 0 ? "Jour J" : "Terminée"}</div><div class="l">${esc(c.statut || "")}</div></div>
       </div>
       <div class="actions">
-        ${c.gpx ? (DB ? `<button class="btn" type="button" id="dl-gpx">⬇ Télécharger le GPX</button>` : `<a class="btn" href="${esc(c.gpx)}" download>⬇ Télécharger le GPX</a>`) : ""}
+        ${segsGpx.length ? segsGpx.map((x, i) => `<button class="btn" type="button" data-dl="${i}">⬇ GPX ${esc((SEGS[x.sport] || { nom: x.sport }).nom.toLowerCase())}</button>`).join("")
+          : c.gpx ? (DB ? `<button class="btn" type="button" id="dl-gpx">⬇ Télécharger le GPX</button>` : `<a class="btn" href="${esc(c.gpx)}" download>⬇ Télécharger le GPX</a>`) : ""}
         ${liens}
       </div>`;
 
     // Rejoindre le départ (courses où l'on est inscrit) : Google Maps ou Waze
     const destTexte = c.depart || [c.lieu, c.pays].filter(Boolean).join(", ");
-    if (c.statut === "inscrit" && (destTexte || c.gpx)) {
+    if (c.statut === "inscrit" && (destTexte || aTrace)) {
       html += `<div class="box go-depart">
         <h2>🚗 Rejoindre le départ</h2>
         <p class="muted" id="go-dest">${destTexte ? esc(destTexte) : "Départ de la trace GPX"}</p>
@@ -421,7 +436,7 @@
       </div>`;
     }
 
-    if (c.gpx) {
+    if (aTrace) {
       html += `<div class="mapcard">
         <div id="map"></div>
         <div class="profile-wrap"><svg id="profile" aria-label="Profil altimétrique"></svg></div>
@@ -494,17 +509,18 @@
       cb.addEventListener("change", () => localSet("mat:" + cb.dataset.k, cb.checked ? "1" : "0"));
     });
 
-    if (c.gpx) {
-      (DB ? DB.gpx(c.gpx) : fetch(c.gpx).then(r => r.text())).then(txt => {
-        const dl = app.querySelector("#dl-gpx");
-        if (dl) dl.onclick = () => {
+    if (aTrace) {
+      chargerTraces(c).then(({ t: trace, segs, fichiers }) => {
+        const telecharger = f => {
           const a = document.createElement("a");
-          a.href = URL.createObjectURL(new Blob([txt], { type: "application/gpx+xml" }));
-          a.download = c.id + ".gpx"; document.body.appendChild(a); a.click(); a.remove();
+          a.href = URL.createObjectURL(new Blob([f.txt], { type: "application/gpx+xml" }));
+          a.download = f.nom; document.body.appendChild(a); a.click(); a.remove();
           setTimeout(() => URL.revokeObjectURL(a.href), 2000);
         };
+        const dl = app.querySelector("#dl-gpx");
+        if (dl) dl.onclick = () => telecharger(fichiers[0]);
+        app.querySelectorAll("[data-dl]").forEach(b => { b.onclick = () => telecharger(fichiers[+b.dataset.dl]); });
         if (!document.getElementById("profile") || !location.hash.includes(encodeURIComponent(c.id))) return; // page quittée entre-temps
-        const trace = parseGpx(txt);
         if (!trace.length) throw new Error("trace vide");
         // Sans adresse de départ saisie, on vise le premier point de la trace (plus précis que la ville)
         if (!c.depart && app.querySelector("#go-gmaps")) {
@@ -515,15 +531,50 @@
           app.querySelector("#go-dest").textContent = "Départ de la trace GPX" + (destTexte ? ` (${destTexte})` : "");
         }
         const s = stats(trace);
+        if (segs) s.dplus = segs.reduce((a, g) => a + (g.dplus || 0), 0); // D+ = somme des disciplines
         // Le GPX fait foi pour la distance et le D+
         document.getElementById("st-dist").textContent = fmtKm(s.dist);
         if (s.hasEle) document.getElementById("st-dp").textContent = fmtM(s.dplus);
         document.getElementById("st-alt").textContent = s.hasEle ? fmtM(s.max) : "–";
-        carteEtProfil(c, trace, s);
+        if (segs) {
+          const st = document.querySelector(".stats");
+          st.insertAdjacentHTML("afterend", `<div class="seg-stats">${segs.map(g => `<span class="seg-chip" style="--c:${SEGS[g.sport]?.couleur || "#888"}">${SEGS[g.sport]?.ico || ""} ${esc(SEGS[g.sport]?.nom || g.sport)} <b>${fmtKm(g.d1 - g.d0)}</b>${g.dplus ? ` · ${fmtM(g.dplus)} D+` : ""}</span>`).join("")}</div>`);
+        }
+        carteEtProfil(c, trace, s, segs);
       }).catch(e => {
         document.getElementById("readout").textContent = "Impossible de lire le GPX : " + e.message;
       });
     }
+  }
+
+  // Une trace (c.gpx) ou plusieurs enchaînées (triathlon : natation fictive + vélo + course à pied)
+  async function chargerTraces(c) {
+    const lire = ch => DB ? DB.gpx(ch) : fetch(ch).then(r => r.text());
+    const segsGpx = (c.segments || []).filter(x => x.gpx);
+    if (!segsGpx.length) {
+      const txt = await lire(c.gpx);
+      return { t: parseGpx(txt), segs: null, fichiers: [{ nom: c.id + ".gpx", txt }] };
+    }
+    const parts = await Promise.all(segsGpx.map(async x => { const txt = await lire(x.gpx); return { x, txt, tr: parseGpx(txt) }; }));
+    const t = [], segs = [];
+    let off = 0;
+    const nat = (c.segments || []).find(x => x.sport === "natation" && x.distance_km > 0);
+    const ref = parts.find(p => p.tr.length)?.tr[0];
+    if (nat && ref) {
+      // Natation : pas de GPS dans l'eau, on dessine un segment plat de la bonne longueur au niveau du départ
+      for (let k = 0; k <= 20; k++) t.push({ lat: ref.lat, lon: ref.lon, ele: ref.ele, d: nat.distance_km * k / 20, seg: 0, nage: true });
+      segs.push({ sport: "natation", d0: 0, d1: nat.distance_km, dplus: 0 });
+      off = nat.distance_km;
+    }
+    for (const p of parts) {
+      if (!p.tr.length) continue;
+      const i = segs.length;
+      for (const q of p.tr) t.push({ lat: q.lat, lon: q.lon, ele: q.ele, d: q.d + off, seg: i });
+      const st = stats(p.tr);
+      segs.push({ sport: p.x.sport, d0: off, d1: off + st.dist, dplus: st.hasEle ? st.dplus : 0 });
+      off += st.dist;
+    }
+    return { t, segs, fichiers: parts.map(p => ({ nom: `${c.id}-${p.x.sport}.gpx`, txt: p.txt })) };
   }
 
   /* ---------- Logistique : logement, vols, voiture, train ---------- */
@@ -609,7 +660,7 @@
   }
 
   /* ---------- Carte + profil ---------- */
-  function carteEtProfil(c, t, s) {
+  function carteEtProfil(c, t, s, segs) {
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#e4572e";
     const topo = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", { maxZoom: 17, attribution: "© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA)" });
     const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" });
@@ -619,16 +670,26 @@
     L.control.layers({ "Topo": topo, "Plan": osm, "Satellite": sat }, null, { position: "topright" }).addTo(map);
     L.control.scale({ imperial: false }).addTo(map);
 
-    const latlngs = t.map(p => [p.lat, p.lon]);
-    L.polyline(latlngs, { color: "#fff", weight: 8, opacity: .8 }).addTo(map);
-    const line = L.polyline(latlngs, { color: accent, weight: 4.5 }).addTo(map);
-    map.fitBounds(line.getBounds(), { padding: [20, 20] });
+    const coul = i => segs ? (SEGS[segs[i].sport]?.couleur || accent) : accent;
+    const groupes = segs ? segs.map((g, i) => ({ i, pts: t.filter(p => p.seg === i && !p.nage) })).filter(g => g.pts.length) : [{ i: 0, pts: t }];
+    const lines = groupes.map(g => {
+      const ll = g.pts.map(p => [p.lat, p.lon]);
+      L.polyline(ll, { color: "#fff", weight: 8, opacity: .8 }).addTo(map);
+      return L.polyline(ll, { color: coul(g.i), weight: 4.5 }).addTo(map);
+    });
+    map.fitBounds(L.featureGroup(lines).getBounds(), { padding: [20, 20] });
 
     const pin = (txt, bg) => L.divIcon({ className: "", html: `<div class="pin" style="background:${bg}">${txt}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
     const debut = t[0], fin = t[t.length - 1];
     const boucle = haversine(debut, fin) < 0.2;
     L.marker([debut.lat, debut.lon], { icon: pin(boucle ? "⇆" : "D", "#2f9e44"), title: boucle ? "Départ / arrivée" : "Départ" }).addTo(map);
     if (!boucle) L.marker([fin.lat, fin.lon], { icon: pin("A", "#1f2328"), title: "Arrivée" }).addTo(map);
+    // Transitions du triathlon (T1, T2) au début de chaque discipline après la première
+    if (segs) segs.forEach((g, i) => {
+      if (i === 0) return;
+      const p = t.find(q => q.seg === i && !q.nage);
+      if (p) L.marker([p.lat, p.lon], { icon: pin("T" + i, "#6b7078"), title: "Transition vers " + (SEGS[g.sport]?.nom || g.sport) }).addTo(map);
+    });
 
     // Bornes kilométriques
     const pas = s.dist > 60 ? 10 : 5;
@@ -644,9 +705,9 @@
 
     const curseur = L.marker([debut.lat, debut.lon], { icon: L.divIcon({ className: "", html: `<div class="cursor-dot"></div>`, iconSize: [16, 16], iconAnchor: [8, 8] }), interactive: false, zIndexOffset: 10000 });
 
-    let profil = dessinerProfil(c, t, s, accent);
+    let profil = dessinerProfil(c, t, s, accent, segs);
     let to = null;
-    onResize = () => { clearTimeout(to); to = setTimeout(() => { profil = dessinerProfil(c, t, s, accent); profil.onMove = montrer; profil.onLeave = cacher; }, 150); };
+    onResize = () => { clearTimeout(to); to = setTimeout(() => { profil = dessinerProfil(c, t, s, accent, segs); profil.onMove = montrer; profil.onLeave = cacher; }, 150); };
     function montrer(i, depuisCarte) {
       const p = t[i];
       curseur.setLatLng([p.lat, p.lon]);
@@ -658,7 +719,9 @@
       const pente = (b.d - a.d) > 0 && a.ele != null && b.ele != null ? (b.ele - a.ele) / ((b.d - a.d) * 1000) * 100 : 0;
       let dp = 0, ref = t[0].ele;
       for (let k = 1; k <= i && ref != null; k++) { const df = t[k].ele - ref; if (df > 3) { dp += df; ref = t[k].ele; } else if (df < -3) ref = t[k].ele; }
+      const sg = segs && segs[p.seg] ? SEGS[segs[p.seg].sport] : null;
       document.getElementById("readout").innerHTML =
+        (sg ? `<span>${sg.ico} <b style="color:${sg.couleur}">${sg.nom}</b></span>` : "") +
         `<span>Km <b>${(p.d).toFixed(2).replace(".", ",")}</b></span>` +
         (p.ele != null ? `<span>Altitude <b>${fmtM(p.ele)}</b></span><span>Pente <b>${pente >= 0 ? "+" : ""}${Math.round(pente)} %</b></span><span>D+ cumulé <b>${fmtM(dp)}</b></span>` : "") +
         `<span>Reste <b>${fmtKm(s.dist - p.d)}</b></span>`;
@@ -668,19 +731,20 @@
     profil.onLeave = cacher;
 
     // Survol de la trace sur la carte -> curseur sur le profil
-    line.on("mousemove", e => {
+    const survol = e => {
       let best = 0, bd = Infinity;
       for (let i = 0; i < t.length; i++) {
+        if (t[i].nage) continue;
         const dd = (t[i].lat - e.latlng.lat) ** 2 + (t[i].lon - e.latlng.lng) ** 2;
         if (dd < bd) { bd = dd; best = i; }
       }
       montrer(best, true);
-    });
-    line.on("mouseout", cacher);
+    };
+    lines.forEach(l => { l.on("mousemove", survol); l.on("mouseout", cacher); });
     setTimeout(() => map.invalidateSize(), 50);
   }
 
-  function dessinerProfil(c, t, s, accent) {
+  function dessinerProfil(c, t, s, accent, segs) {
     const svg = document.getElementById("profile");
     const NS = "http://www.w3.org/2000/svg";
     const api = { onMove: null, onLeave: null, curseur: () => {} };
@@ -710,7 +774,22 @@
       for (let i = 0; i < t.length; i += pas) if (t[i].ele != null) path += (path ? "L" : "M") + x(t[i].d).toFixed(1) + "," + y(t[i].ele).toFixed(1);
       const last = t[t.length - 1];
       path += "L" + x(last.d).toFixed(1) + "," + y(last.ele ?? lo).toFixed(1);
-      out += `<path d="${path}L${x(s.dist)},${H - m.b}L${m.l},${H - m.b}Z" fill="url(#g)"/><path d="${path}" fill="none" stroke="${accent}" stroke-width="2"/>`;
+      if (!segs) out += `<path d="${path}L${x(s.dist)},${H - m.b}L${m.l},${H - m.b}Z" fill="url(#g)"/><path d="${path}" fill="none" stroke="${accent}" stroke-width="2"/>`;
+      else segs.forEach((g, i) => {
+        // une couleur par discipline, avec le nom au-dessus
+        const pts = t.filter(p => p.seg === i && p.ele != null);
+        if (!pts.length) return;
+        const col = SEGS[g.sport]?.couleur || accent;
+        const pp = Math.max(1, Math.floor(pts.length / (W * 1.5)));
+        let ph = "";
+        for (let k = 0; k < pts.length; k += pp) ph += (ph ? "L" : "M") + x(pts[k].d).toFixed(1) + "," + y(pts[k].ele).toFixed(1);
+        const z = pts[pts.length - 1];
+        ph += "L" + x(z.d).toFixed(1) + "," + y(z.ele).toFixed(1);
+        out += `<path d="${ph}L${x(z.d).toFixed(1)},${H - m.b}L${x(pts[0].d).toFixed(1)},${H - m.b}Z" fill="${col}" fill-opacity=".22"/><path d="${ph}" fill="none" stroke="${col}" stroke-width="2.2"/>`;
+        if (i > 0) out += `<line x1="${x(g.d0)}" x2="${x(g.d0)}" y1="${m.t}" y2="${H - m.b}" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="2 3"/>`;
+        const largeur = x(g.d1) - x(g.d0);
+        out += `<text x="${(x(g.d0) + x(g.d1)) / 2}" y="${m.t + 10}" text-anchor="middle" style="fill:${col};font-weight:700">${largeur > 70 ? (SEGS[g.sport]?.ico || "") + " " + (SEGS[g.sport]?.nom || g.sport) : SEGS[g.sport]?.ico || ""}</text>`;
+      });
     }
     out += `<g id="pcur" style="display:none"><line id="pcl" y1="${m.t}" y2="${H - m.b}" stroke="currentColor" stroke-opacity=".6"/><circle id="pcc" r="5" fill="#fff" stroke="${accent}" stroke-width="3"/></g>`;
     out += `<rect x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent" id="phit"/>`;
